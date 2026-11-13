@@ -9,6 +9,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 from src.config import SEED
+from src.evaluate import best_f1_threshold
 
 
 def train_baseline(X_train, y_train) -> Pipeline:
@@ -61,3 +62,21 @@ def tune(X, y, n_trials: int) -> optuna.Study:
     study = optuna.create_study(direction="maximize", sampler=sampler)
     study.optimize(objective, n_trials=n_trials)
     return study
+
+
+def choose_threshold(model_params: dict, X_train, y_train) -> float:
+    """Choose the decision threshold that maximizes F1 on out-of-fold predictions.
+
+    A Random Forest is built with make_rf(**model_params), and probabilities are
+    generated with stratified 5-fold cross_val_predict on the training set.
+    """
+    # Why the threshold is chosen on the training set and not on the test set:
+    # the threshold is a model decision, just like a hyperparameter. If we picked
+    # it on the test set, the test metrics would be optimistic, because the test
+    # set would have been used to make a choice. Out-of-fold probabilities are
+    # predictions on rows the model did not see during fitting, so they behave
+    # like unseen data while keeping the test set untouched until the final evaluation.
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=SEED)
+    model = make_rf(**model_params)
+    proba = cross_val_predict(model, X_train, y_train, cv=cv, method="predict_proba")[:, 1]
+    return best_f1_threshold(y_train, proba)
