@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
-from src.config import DATA_PATH, SEED, TARGET, TEST_SIZE
+from src.config import DATA_PATH, PROCESSED_PATH, SEED, TARGET, TEST_SIZE
 from src.schema import validate_raw
 
 
@@ -19,6 +19,18 @@ def load_data(path: Path = DATA_PATH) -> pd.DataFrame:
 
     df = pd.read_csv(path)
 
+    return validate_raw(df)
+
+
+def load_processed(path: Path = PROCESSED_PATH) -> pd.DataFrame:
+    """Load the processed (deduplicated) dataset and validate it."""
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Processed dataset not found at {path}. "
+            "Run 'python -m src.make_dataset' first."
+        )
+
+    df = pd.read_parquet(path)
     return validate_raw(df)
 
 

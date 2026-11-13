@@ -1,0 +1,9 @@
+{
+  "rows_before": 284807,
+  "rows_after": 283726,
+  "duplicates_removed": 1081,
+  "frauds_before": 492,
+  "frauds_after": 473,
+  "fraud_rate_before": 0.001727485630620034,
+  "fraud_rate_after": 0.001667101358352777
+}

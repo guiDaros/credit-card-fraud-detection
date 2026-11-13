@@ -13,3 +13,7 @@ __pycache__/
 # Data and models (large files)
 data/raw/*.csv
 models/*.joblib
+data/processed/*.parquet
+
+# Keep the data report under version control
+!reports/data_report.json
