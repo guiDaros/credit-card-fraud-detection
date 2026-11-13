@@ -1,0 +1,9 @@
+pandas>=2.2
+numpy>=1.26
+scikit-learn>=1.5
+optuna>=4.0
+matplotlib>=3.9
+joblib>=1.4
+huggingface_hub>=0.25
+jupyter>=1.1
+pytest>=8.3
