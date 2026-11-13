@@ -1,3 +1,22 @@
+---
+license: mit
+language: en
+library_name: sklearn
+pipeline_tag: tabular-classification
+tags:
+  - tabular-classification
+  - fraud-detection
+  - random-forest
+  - scikit-learn
+  - optuna
+  - imbalanced-classification
+metrics:
+  - average_precision
+  - precision
+  - recall
+  - f1
+---
+
 # Credit Card Fraud Detection
 
 Personal machine learning project focused on financial fraud detection.
