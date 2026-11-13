@@ -6,12 +6,11 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 
 from src.config import DATA_PATH, SEED, TARGET, TEST_SIZE
-
-EXPECTED_COLUMNS = ["Time"] + [f"V{i}" for i in range(1, 29)] + ["Amount", TARGET]
+from src.schema import validate_raw
 
 
 def load_data(path: Path = DATA_PATH) -> pd.DataFrame:
-    """Load the credit card fraud dataset and check its columns."""
+    """Load the credit card fraud dataset and validate it against the schema."""
     if not path.exists():
         raise FileNotFoundError(
             f"Dataset not found at {path}. Download 'creditcard.csv' from Kaggle "
@@ -20,11 +19,7 @@ def load_data(path: Path = DATA_PATH) -> pd.DataFrame:
 
     df = pd.read_csv(path)
 
-    missing = [col for col in EXPECTED_COLUMNS if col not in df.columns]
-    if missing:
-        raise ValueError(f"Dataset is missing expected columns: {missing}")
-
-    return df
+    return validate_raw(df)
 
 
 def split_data(df: pd.DataFrame):
