@@ -1,5 +1,6 @@
 """Data loading utilities."""
 
+import logging
 from pathlib import Path
 
 import pandas as pd
@@ -7,6 +8,11 @@ from sklearn.model_selection import train_test_split
 
 from src.config import DATA_PATH, PROCESSED_PATH, SEED, TARGET, TEST_SIZE
 from src.schema import validate_raw
+
+logger = logging.getLogger(__name__)
+
+# Warn when the test set has fewer frauds than this.
+MIN_TEST_FRAUDS = 50
 
 
 def load_data(path: Path = DATA_PATH) -> pd.DataFrame:
@@ -34,18 +40,40 @@ def load_processed(path: Path = PROCESSED_PATH) -> pd.DataFrame:
     return validate_raw(df)
 
 
-def split_data(df: pd.DataFrame):
-    """Split features and target into stratified train and test sets.
+def split_data(df: pd.DataFrame, method: str = "random"):
+    """Split features and target into train and test sets.
+
+    method="random": stratified random split (SEED, TEST_SIZE).
+    method="temporal": no shuffling and no stratification. The cut is the
+    (1 - TEST_SIZE) quantile of Time; train is Time <= cut and test is
+    Time > cut, so rows with the same Time never end up on both sides.
 
     Returns X_train, X_test, y_train, y_test.
     """
     X = df.drop(columns=[TARGET])
     y = df[TARGET]
 
-    # Stratify on y so both sets keep the same (very small) share of fraud.
     # IMPORTANT: the test set must only be used for the final evaluation.
     # Do not use it for tuning, threshold selection or any other decision.
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=TEST_SIZE, random_state=SEED, stratify=y
-    )
+    if method == "random":
+        # Stratify on y so both sets keep the same (very small) share of fraud.
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=TEST_SIZE, random_state=SEED, stratify=y
+        )
+    elif method == "temporal":
+        cut = df["Time"].quantile(1 - TEST_SIZE)
+        is_train = df["Time"] <= cut
+        X_train, X_test = X[is_train], X[~is_train]
+        y_train, y_test = y[is_train], y[~is_train]
+    else:
+        raise ValueError(f"Unknown split method: {method!r}. Use 'random' or 'temporal'.")
+
+    n_test_frauds = int(y_test.sum())
+    if n_test_frauds < MIN_TEST_FRAUDS:
+        logger.warning(
+            "Test set has only %d frauds (less than %d); metrics will be noisy.",
+            n_test_frauds,
+            MIN_TEST_FRAUDS,
+        )
+
     return X_train, X_test, y_train, y_test

@@ -15,8 +15,9 @@ def add_features(df: pd.DataFrame) -> pd.DataFrame:
     is not modified.
 
     Each new value is computed only from the same row, with no statistics
-    from other rows (no mean, scaling or fitting). So this function can be
-    applied before or after the train/test split without data leakage.
+    from other rows (no mean, scaling or fitting), so there is no data leakage.
+    It is applied after the train/test split, separately on train and test,
+    because the split needs the original Time column (temporal split).
     """
     result = df.copy()
     result["Amount_log"] = np.log1p(result["Amount"])
