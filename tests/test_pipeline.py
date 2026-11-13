@@ -38,6 +38,20 @@ def test_add_features_creates_and_drops_columns(synthetic_df):
     assert "Amount" in synthetic_df.columns
 
 
+def test_add_features_without_hour(synthetic_df):
+    result = add_features(synthetic_df, use_hour=False)
+
+    assert "Hour" not in result.columns
+    assert "Amount_log" in result.columns
+    assert np.allclose(result["Amount_log"], np.log1p(synthetic_df["Amount"]))
+    assert "Time" not in result.columns
+    assert "Amount" not in result.columns
+
+    # Same columns as the default, minus Hour.
+    with_hour = add_features(synthetic_df, use_hour=True)
+    assert list(result.columns) == [c for c in with_hour.columns if c != "Hour"]
+
+
 def test_random_split_keeps_fraud_ratio(synthetic_df):
     X_train, X_test, y_train, y_test = split_data(synthetic_df, method="random")
 

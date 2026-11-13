@@ -4,12 +4,17 @@ import numpy as np
 import pandas as pd
 
 
-def add_features(df: pd.DataFrame) -> pd.DataFrame:
+def add_features(df: pd.DataFrame, use_hour: bool = True) -> pd.DataFrame:
     """Return a new DataFrame with engineered features.
 
     Adds:
     - Amount_log: log1p(Amount)
     - Hour: (Time // 3600) % 24, the hour relative to the first transaction
+      (only when use_hour is True)
+
+    use_hour=False lets us compare models with and without Hour: in the
+    temporal split the test set only has hours already seen in training,
+    but from a different day.
 
     Then drops the original Time and Amount columns. The input DataFrame
     is not modified.
@@ -21,5 +26,6 @@ def add_features(df: pd.DataFrame) -> pd.DataFrame:
     """
     result = df.copy()
     result["Amount_log"] = np.log1p(result["Amount"])
-    result["Hour"] = (result["Time"] // 3600 % 24).astype(int)
+    if use_hour:
+        result["Hour"] = (result["Time"] // 3600 % 24).astype(int)
     return result.drop(columns=["Time", "Amount"])
