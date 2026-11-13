@@ -1,5 +1,6 @@
 """Model training functions."""
 
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -23,3 +24,11 @@ def train_baseline(X_train, y_train) -> Pipeline:
     )
     model.fit(X_train, y_train)
     return model
+
+
+def make_rf(**params) -> RandomForestClassifier:
+    """Create an (unfitted) RandomForestClassifier with a fixed seed and all CPU cores.
+
+    Any keyword argument is passed to RandomForestClassifier.
+    """
+    return RandomForestClassifier(random_state=SEED, n_jobs=-1, **params)
