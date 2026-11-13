@@ -91,18 +91,17 @@ def main() -> None:
     """Evaluate the saved model on the test set and save the reports."""
     # Imported here to keep the helper functions above free of data dependencies.
     from src.data import load_processed, split_data
-    from src.features import add_features
 
     bundle = joblib.load(MODELS_DIR / "model.joblib")
-    model = bundle["model"]
+    pipeline = bundle["pipeline"]
     threshold = bundle["threshold"]
 
-    # Split first (on the original Time/Amount), then add features to the test set.
-    # Final evaluation: this is the only place where the test set is used.
-    _, X_test, _, y_test = split_data(load_processed())
-    X_test = add_features(X_test)[bundle["features"]]
+    # Use the same split as in training. The pipeline computes the features
+    # from the raw columns. Final evaluation: the only place the test set is used.
+    _, X_test, _, y_test = split_data(load_processed(), method=bundle["split"])
+    X_test = X_test[bundle["input_columns"]]
 
-    proba = model.predict_proba(X_test)[:, 1]
+    proba = pipeline.predict_proba(X_test)[:, 1]
 
     metrics = {
         "pr_auc": float(average_precision_score(y_test, proba)),

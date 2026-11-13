@@ -24,6 +24,10 @@ def add_features(df: pd.DataFrame, use_hour: bool = True) -> pd.DataFrame:
     It is applied after the train/test split, separately on train and test,
     because the split needs the original Time column (temporal split).
     """
+    missing = [col for col in ("Time", "Amount") if col not in df.columns]
+    if missing:
+        raise ValueError(f"add_features: missing required column(s): {missing}")
+
     result = df.copy()
     result["Amount_log"] = np.log1p(result["Amount"])
     if use_hour:

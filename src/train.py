@@ -13,7 +13,7 @@ from sklearn.model_selection import StratifiedKFold, cross_val_predict
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import FunctionTransformer, StandardScaler
 
 from src.config import MODELS_DIR, SEED
 from src.cv import temporal_oof_proba
@@ -48,15 +48,32 @@ def make_rf(**params) -> RandomForestClassifier:
     return RandomForestClassifier(random_state=SEED, n_jobs=-1, **params)
 
 
+def make_pipeline(use_hour: bool = True, **rf_params) -> Pipeline:
+    """Create an (unfitted) pipeline: add_features + Random Forest.
+
+    The pipeline takes the raw columns (Time, V1..V28, Amount), so whoever uses
+    the model does not need to recreate the features. The Random Forest uses
+    class_weight="balanced_subsample" by default; other keyword arguments go to make_rf.
+    """
+    rf_params = {"class_weight": "balanced_subsample", **rf_params}
+    return Pipeline(
+        [
+            ("features", FunctionTransformer(add_features, kw_args={"use_hour": use_hour})),
+            ("classifier", make_rf(**rf_params)),
+        ]
+    )
+
+
 SPLITS = ("random", "temporal")
 
 
 def check_time_order(X) -> None:
     """Raise ValueError if the rows of X are not in Time order.
 
-    Uses the Time column when present. After add_features, Time is dropped,
-    so the index is checked instead: the processed dataset is sorted by Time
-    with a reset index, so increasing index means increasing Time.
+    Uses the Time column when present. Without it (for example, data that
+    already went through add_features), the index is checked instead: the
+    processed dataset is sorted by Time with a reset index, so increasing
+    index means increasing Time.
     """
     if "Time" in X.columns:
         is_sorted = X["Time"].is_monotonic_increasing
@@ -87,8 +104,10 @@ def oof_proba(model_factory, X, y, split: str, n_splits: int):
     raise ValueError(f"Unknown split: {split!r}. Use 'random' or 'temporal'.")
 
 
-def tune(X, y, n_trials: int, split: str = "random") -> optuna.Study:
-    """Tune a Random Forest with Optuna to maximize PR-AUC (average precision).
+def tune(X, y, n_trials: int, split: str = "random", use_hour: bool = True) -> optuna.Study:
+    """Tune the pipeline (add_features + Random Forest) with Optuna to maximize PR-AUC.
+
+    X has the raw columns; features are computed inside each fold.
 
     Each trial is scored with 3-fold out-of-fold predictions on the data passed
     in: StratifiedKFold for split="random", or a forward-in-time split for
@@ -105,7 +124,7 @@ def tune(X, y, n_trials: int, split: str = "random") -> optuna.Study:
             "max_features": trial.suggest_categorical("max_features", ["sqrt", "log2", 0.3]),
         }
         y_eval, proba = oof_proba(
-            lambda: make_rf(class_weight="balanced_subsample", **params),
+            lambda: make_pipeline(use_hour=use_hour, **params),
             X,
             y,
             split=split,
@@ -119,10 +138,13 @@ def tune(X, y, n_trials: int, split: str = "random") -> optuna.Study:
     return study
 
 
-def choose_threshold(model_params: dict, X_train, y_train, split: str = "random") -> float:
+def choose_threshold(
+    model_params: dict, X_train, y_train, split: str = "random", use_hour: bool = True
+) -> float:
     """Choose the decision threshold that maximizes F1 on out-of-fold predictions.
 
-    A Random Forest is built with make_rf(**model_params), and probabilities are
+    A pipeline is built with make_pipeline(use_hour, **model_params) and X_train
+    has the raw columns, so features are computed inside each fold. Probabilities are
     generated with 5-fold out-of-fold predictions on the training set:
     StratifiedKFold for split="random", or a forward-in-time split for
     split="temporal" (X_train must be sorted by Time; only the rows that got
@@ -135,50 +157,58 @@ def choose_threshold(model_params: dict, X_train, y_train, split: str = "random"
     # predictions on rows the model did not see during fitting, so they behave
     # like unseen data while keeping the test set untouched until the final evaluation.
     y_eval, proba = oof_proba(
-        lambda: make_rf(**model_params), X_train, y_train, split=split, n_splits=5
+        lambda: make_pipeline(use_hour=use_hour, **model_params),
+        X_train,
+        y_train,
+        split=split,
+        n_splits=5,
     )
     return best_f1_threshold(y_eval, proba)
 
 
 def main() -> None:
-    """Tune, choose the threshold, train the final model and save it."""
+    """Tune, choose the threshold, train the final pipeline and save it."""
     parser = argparse.ArgumentParser(description="Train the fraud detection Random Forest.")
     parser.add_argument("--trials", type=int, default=20, help="Number of Optuna trials.")
     parser.add_argument(
         "--split", choices=SPLITS, default="random", help="Train/test split and CV scheme."
     )
+    parser.add_argument(
+        "--no-hour", action="store_true", help="Do not create the Hour feature."
+    )
     args = parser.parse_args()
+    use_hour = not args.no_hour
 
-    # Split first (on the original Time/Amount), then add features to each set.
+    # X_train keeps the raw columns; the pipeline computes the features itself.
     # The test set is not used anywhere in this script.
     X_train, X_test, y_train, y_test = split_data(load_processed(), method=args.split)
     if args.split == "temporal":
-        # Temporal CV needs rows in Time order; Time is dropped by add_features,
-        # so sort now and reset the index (check_time_order relies on it).
+        # Temporal CV needs rows in Time order (checked by check_time_order).
         order = X_train["Time"].sort_values(kind="stable").index
         X_train = X_train.loc[order].reset_index(drop=True)
         y_train = y_train.loc[order].reset_index(drop=True)
-    X_train = add_features(X_train)
 
     print(f"Tuning with {args.trials} trials...")
-    study = tune(X_train, y_train, n_trials=args.trials, split=args.split)
-    params = {**study.best_params, "class_weight": "balanced_subsample"}
+    study = tune(X_train, y_train, n_trials=args.trials, split=args.split, use_hour=use_hour)
+    params = study.best_params
     print(f"Best CV PR-AUC: {study.best_value:.4f}")
     print(f"Best params: {params}")
 
-    threshold = choose_threshold(params, X_train, y_train, split=args.split)
+    threshold = choose_threshold(params, X_train, y_train, split=args.split, use_hour=use_hour)
     print(f"Chosen threshold (out-of-fold F1): {threshold:.4f}")
 
-    model = make_rf(**params)
-    model.fit(X_train, y_train)
+    pipeline = make_pipeline(use_hour=use_hour, **params)
+    pipeline.fit(X_train, y_train)
 
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     model_path = MODELS_DIR / "model.joblib"
     bundle = {
-        "model": model,
+        "pipeline": pipeline,
         "threshold": threshold,
-        "features": list(X_train.columns),
-        "params": params,
+        "input_columns": list(X_train.columns),
+        "use_hour": use_hour,
+        "split": args.split,
+        "params": {**params, "class_weight": "balanced_subsample"},
     }
     joblib.dump(bundle, model_path, compress=3)
 

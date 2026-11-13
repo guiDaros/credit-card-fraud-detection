@@ -11,18 +11,24 @@ N_ROWS = 300
 N_TRIALS = 2
 
 
+RAW_COLUMNS = ["Time"] + [f"V{i}" for i in range(1, 29)] + ["Amount"]
+
+
+def make_raw_data(n_rows: int = N_ROWS):
+    """Fake raw data (Time, V1..V28, Amount) in Time order, ~10% fraud spread over time."""
+    rng = np.random.default_rng(0)
+    y = pd.Series((np.arange(n_rows) % 10 == 0).astype(int))
+    data = {"Time": np.sort(rng.uniform(0, 172800, n_rows))}
+    for i in range(1, 29):
+        data[f"V{i}"] = rng.normal(size=n_rows)
+    data["V1"] = data["V1"] + 2 * y
+    data["Amount"] = rng.uniform(0, 500, n_rows)
+    return pd.DataFrame(data)[RAW_COLUMNS], y
+
+
 @pytest.fixture
 def train_data():
-    """Small fake training set, already in Time order, with ~10% fraud spread over time."""
-    rng = np.random.default_rng(0)
-    y = pd.Series((np.arange(N_ROWS) % 10 == 0).astype(int))
-    X = pd.DataFrame(
-        {
-            "V1": rng.normal(size=N_ROWS) + 2 * y,
-            "V2": rng.normal(size=N_ROWS),
-        }
-    )
-    return X, y
+    return make_raw_data()
 
 
 def expected_temporal_rows(X, y, n_splits):
@@ -94,3 +100,30 @@ def test_unknown_split_raises(train_data):
     X, y = train_data
     with pytest.raises(ValueError, match="Unknown split"):
         train.choose_threshold({"n_estimators": 5}, X, y, split="kfold")
+
+
+@pytest.mark.parametrize("use_hour", [True, False])
+def test_pipeline_predicts_on_raw_dataframe(train_data, use_hour):
+    X, y = train_data
+    pipeline = train.make_pipeline(use_hour=use_hour, n_estimators=10, max_depth=4)
+    pipeline.fit(X, y)
+
+    X_new, _ = make_raw_data(20)
+    proba = pipeline.predict_proba(X_new)[:, 1]
+
+    assert proba.shape == (20,)
+    assert np.all((proba >= 0) & (proba <= 1))
+    assert list(pipeline.feature_names_in_) == RAW_COLUMNS
+    classifier = pipeline.named_steps["classifier"]
+    assert classifier.class_weight == "balanced_subsample"
+    assert ("Hour" in classifier.feature_names_in_) == use_hour
+    assert "Amount_log" in classifier.feature_names_in_
+
+
+@pytest.mark.parametrize("column", ["Time", "Amount", "V14"])
+def test_pipeline_fails_clearly_on_missing_column(train_data, column):
+    X, y = train_data
+    pipeline = train.make_pipeline(n_estimators=10, max_depth=4).fit(X, y)
+
+    with pytest.raises(ValueError, match=column):
+        pipeline.predict_proba(X.drop(columns=column))
