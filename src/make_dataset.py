@@ -7,8 +7,9 @@ import json
 
 import pandas as pd
 
-from src.config import PROCESSED_PATH, REPORTS_DIR, TARGET
+from src.config import DATA_PATH, PROCESSED_PATH, REPORTS_DIR, TARGET
 from src.data import load_data
+from src.provenance import get_provenance
 
 REPORT_PATH = REPORTS_DIR / "data_report.json"
 
@@ -38,6 +39,7 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
 def main():
     df = load_data()
     clean, report = clean_dataset(df)
+    report["provenance"] = get_provenance(DATA_PATH)
 
     PROCESSED_PATH.parent.mkdir(parents=True, exist_ok=True)
     clean.to_parquet(PROCESSED_PATH, index=False)

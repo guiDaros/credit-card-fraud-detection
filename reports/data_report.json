@@ -5,5 +5,14 @@
   "frauds_before": 492,
   "frauds_after": 473,
   "fraud_rate_before": 0.001727485630620034,
-  "fraud_rate_after": 0.001667101358352777
+  "fraud_rate_after": 0.001667101358352777,
+  "provenance": {
+    "raw_sha256": "76274b691b16a6c49d3f159c883398e03ccd6d1ee12d9d8ee38f4b4b98551a89",
+    "python": "3.13.7",
+    "pandas": "2.3.2",
+    "numpy": "2.3.2",
+    "scikit-learn": "1.9.1",
+    "optuna": "5.0.0",
+    "git_commit": "4682f8c983f019510c167474e3ac88520505c026"
+  }
 }
