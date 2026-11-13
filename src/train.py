@@ -16,7 +16,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 from src.config import MODELS_DIR, SEED
-from src.data import load_data, split_data
+from src.data import load_processed, split_data
 from src.evaluate import best_f1_threshold
 from src.features import add_features
 
@@ -97,9 +97,10 @@ def main() -> None:
     parser.add_argument("--trials", type=int, default=20, help="Number of Optuna trials.")
     args = parser.parse_args()
 
-    df = add_features(load_data())
+    # Split first (on the original Time/Amount), then add features to each set.
     # The test set is not used anywhere in this script.
-    X_train, X_test, y_train, y_test = split_data(df)
+    X_train, X_test, y_train, y_test = split_data(load_processed())
+    X_train = add_features(X_train)
 
     print(f"Tuning with {args.trials} trials...")
     study = tune(X_train, y_train, n_trials=args.trials)
