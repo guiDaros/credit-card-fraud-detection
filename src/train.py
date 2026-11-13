@@ -1,5 +1,12 @@
-"""Model training functions."""
+"""Model training functions.
 
+Run the full training pipeline with:
+    python -m src.train --trials 20
+"""
+
+import argparse
+
+import joblib
 import optuna
 from sklearn.metrics import average_precision_score
 from sklearn.model_selection import StratifiedKFold, cross_val_predict
@@ -8,8 +15,10 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-from src.config import SEED
+from src.config import MODELS_DIR, SEED
+from src.data import load_data, split_data
 from src.evaluate import best_f1_threshold
+from src.features import add_features
 
 
 def train_baseline(X_train, y_train) -> Pipeline:
@@ -80,3 +89,43 @@ def choose_threshold(model_params: dict, X_train, y_train) -> float:
     model = make_rf(**model_params)
     proba = cross_val_predict(model, X_train, y_train, cv=cv, method="predict_proba")[:, 1]
     return best_f1_threshold(y_train, proba)
+
+
+def main() -> None:
+    """Tune, choose the threshold, train the final model and save it."""
+    parser = argparse.ArgumentParser(description="Train the fraud detection Random Forest.")
+    parser.add_argument("--trials", type=int, default=20, help="Number of Optuna trials.")
+    args = parser.parse_args()
+
+    df = add_features(load_data())
+    # The test set is not used anywhere in this script.
+    X_train, X_test, y_train, y_test = split_data(df)
+
+    print(f"Tuning with {args.trials} trials...")
+    study = tune(X_train, y_train, n_trials=args.trials)
+    params = {**study.best_params, "class_weight": "balanced_subsample"}
+    print(f"Best CV PR-AUC: {study.best_value:.4f}")
+    print(f"Best params: {params}")
+
+    threshold = choose_threshold(params, X_train, y_train)
+    print(f"Chosen threshold (out-of-fold F1): {threshold:.4f}")
+
+    model = make_rf(**params)
+    model.fit(X_train, y_train)
+
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    model_path = MODELS_DIR / "model.joblib"
+    bundle = {
+        "model": model,
+        "threshold": threshold,
+        "features": list(X_train.columns),
+        "params": params,
+    }
+    joblib.dump(bundle, model_path, compress=3)
+
+    size_mb = model_path.stat().st_size / (1024 * 1024)
+    print(f"Saved {model_path} ({size_mb:.1f} MB)")
+
+
+if __name__ == "__main__":
+    main()
