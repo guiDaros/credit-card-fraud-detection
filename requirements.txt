@@ -7,3 +7,5 @@ joblib>=1.4
 huggingface_hub>=0.25
 jupyter>=1.1
 pytest>=8.3
+pyarrow>=17.0
+pandera>=0.20
