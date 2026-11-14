@@ -22,3 +22,9 @@ data/raw/*.csv
 data/processed/*
 models/*
 !models/.gitkeep
+
+# Logs (e.g. from long training runs)
+*.log
+
+# Personal notes
+to-do.md
