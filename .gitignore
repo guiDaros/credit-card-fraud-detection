@@ -18,8 +18,11 @@ __pycache__/
 kaggle.json
 
 # Data and models (large files)
-data/raw/*.csv
+data/raw/*
 data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/README.md
 models/*
 !models/.gitkeep
 
