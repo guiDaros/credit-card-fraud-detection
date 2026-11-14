@@ -4,6 +4,7 @@ import argparse
 import json
 import sys
 
+import joblib
 import numpy as np
 import pandas as pd
 import pytest
@@ -11,6 +12,7 @@ import pytest
 import src.config as config
 import src.data as data
 import src.evaluate as evaluate
+import src.provenance as provenance
 import src.train as train
 from src.config import TARGET, add_run_args, metrics_path, model_path, pr_curve_path, run_suffix
 
@@ -79,10 +81,24 @@ def test_train_then_evaluate_writes_named_outputs(tmp_path, monkeypatch, cli, su
     report_path = tmp_path / "data_report.json"
     report_path.write_text(json.dumps({"provenance": {"raw_sha256": "abc123"}}))
     monkeypatch.setattr(evaluate, "DATA_REPORT_PATH", report_path)
+    monkeypatch.setattr(train, "DATA_REPORT_PATH", report_path)
+    monkeypatch.setattr(provenance, "get_git_dirty", lambda: False)
 
     monkeypatch.setattr(sys, "argv", ["train", "--trials", "1", *cli])
     train.main()
-    assert (tmp_path / "models" / f"model_{suffix}.joblib").exists()
+    model_file = tmp_path / "models" / f"model_{suffix}.joblib"
+    assert model_file.exists()
+
+    train_prov = joblib.load(model_file)["provenance"]
+    assert train_prov["n_trials"] == 1
+    assert 0 <= train_prov["cv_pr_auc"] <= 1
+    assert train_prov["seed"] == config.SEED
+    assert train_prov["split"] == ("random" if "random" in suffix else "temporal")
+    assert train_prov["use_hour"] == ("nohour" not in suffix)
+    assert train_prov["dataset_sha256"] == "abc123"
+    assert train_prov["git_dirty"] is False
+    for key in ["python", "pandas", "numpy", "scikit-learn", "optuna", "git_commit"]:
+        assert key in train_prov
 
     monkeypatch.setattr(sys, "argv", ["evaluate", *cli])
     evaluate.main()
@@ -96,12 +112,55 @@ def test_train_then_evaluate_writes_named_outputs(tmp_path, monkeypatch, cli, su
     assert metrics["provenance"]["dataset_sha256"] == "abc123"
     for key in ["python", "pandas", "numpy", "scikit-learn", "optuna", "git_commit"]:
         assert key in metrics["provenance"]
+    assert metrics["provenance"]["git_dirty"] is False
+    assert metrics["training_provenance"] == train_prov
+    assert metrics["cv_pr_auc"] == train_prov["cv_pr_auc"]
+
+
+@pytest.mark.parametrize("script", ["train", "evaluate"])
+def test_scripts_refuse_dirty_tree(tmp_path, monkeypatch, script):
+    monkeypatch.setattr(config, "MODELS_DIR", tmp_path / "models")
+    monkeypatch.setattr(config, "REPORTS_DIR", tmp_path / "reports")
+    monkeypatch.setattr(provenance, "get_git_dirty", lambda: True)
+    monkeypatch.setattr(sys, "argv", [script])
+
+    with pytest.raises(RuntimeError, match="--allow-dirty"):
+        {"train": train, "evaluate": evaluate}[script].main()
+    assert not (tmp_path / "models").exists()
+    assert not (tmp_path / "reports").exists()
+
+
+def test_allow_dirty_trains_and_records_dirty(tmp_path, monkeypatch):
+    df = make_processed_df()
+    monkeypatch.setattr(config, "MODELS_DIR", tmp_path / "models")
+    monkeypatch.setattr(train, "load_processed", lambda: df.copy())
+    report_path = tmp_path / "data_report.json"
+    report_path.write_text(json.dumps({"provenance": {"raw_sha256": "abc123"}}))
+    monkeypatch.setattr(train, "DATA_REPORT_PATH", report_path)
+    monkeypatch.setattr(provenance, "get_git_dirty", lambda: True)
+
+    monkeypatch.setattr(sys, "argv", ["train", "--trials", "1", "--allow-dirty"])
+    train.main()
+
+    bundle = joblib.load(tmp_path / "models" / "model_temporal.joblib")
+    assert bundle["provenance"]["git_dirty"] is True
+
+
+def test_build_metrics_without_training_provenance():
+    # Models saved before provenance was recorded have no "provenance" key.
+    bundle = {"split": "temporal", "use_hour": True, "threshold": 0.5, "params": {}}
+    y = np.array([0, 0, 1, 0, 1])
+    proba = np.array([0.1, 0.2, 0.9, 0.3, 0.6])
+
+    metrics = evaluate.build_metrics(bundle, y, y, proba, provenance={"git_dirty": False})
+
+    assert metrics["training_provenance"] is None
+    assert metrics["cv_pr_auc"] is None
 
 
 def test_evaluate_rejects_mismatched_model(tmp_path, monkeypatch):
-    import joblib
-
     monkeypatch.setattr(config, "MODELS_DIR", tmp_path)
+    monkeypatch.setattr(provenance, "get_git_dirty", lambda: False)
     joblib.dump({"split": "random", "use_hour": True}, model_path("temporal", True))
     monkeypatch.setattr(sys, "argv", ["evaluate"])
 

@@ -1,10 +1,12 @@
 """Evaluation helpers based on precision and recall (no accuracy).
 
 Evaluate a saved model on the test set with:
-    python -m src.evaluate [--split {random,temporal}] [--no-hour]
+    python -m src.evaluate [--split {random,temporal}] [--no-hour] [--allow-dirty]
 
 Reads models/model_<split>[_nohour].joblib and writes
 reports/metrics_<split>[_nohour].json and reports/pr_curve_<split>[_nohour].png.
+Refuses to write them if the git working tree has uncommitted changes, unless
+--allow-dirty is passed.
 """
 
 import argparse
@@ -100,8 +102,13 @@ def build_metrics(bundle: dict, y_train, y_test, proba, provenance: dict) -> dic
     """Build the metrics report for one run configuration.
 
     Includes the test metrics, the run configuration (split, use_hour, params),
-    row and fraud counts for train and test, and the provenance info.
+    row and fraud counts for train and test, and two provenance blocks:
+    - provenance: this evaluation run (dataset hash, versions, git commit, git_dirty);
+    - training_provenance: copied from the model file (None for models saved before
+      it was recorded). cv_pr_auc comes from it too, next to the test pr_auc.
     """
+    training_provenance = bundle.get("provenance")
+    cv_pr_auc = training_provenance["cv_pr_auc"] if training_provenance else None
     return {
         "split": bundle["split"],
         "use_hour": bundle["use_hour"],
@@ -111,10 +118,12 @@ def build_metrics(bundle: dict, y_train, y_test, proba, provenance: dict) -> dic
         "n_test_frauds": int(np.sum(y_test)),
         "fraud_rate": float(np.mean(y_test)),
         "pr_auc": float(average_precision_score(y_test, proba)),
+        "cv_pr_auc": cv_pr_auc,
         "at_0.5": metrics_at(y_test, proba, 0.5),
         "at_chosen_threshold": metrics_at(y_test, proba, bundle["threshold"]),
         "params": bundle["params"],
         "provenance": provenance,
+        "training_provenance": training_provenance,
     }
 
 
@@ -122,12 +131,19 @@ def main() -> None:
     """Evaluate the saved model on the test set and save the reports."""
     # Imported here to keep the helper functions above free of data dependencies.
     from src.data import load_processed, split_data
-    from src.provenance import get_run_provenance
+    from src.provenance import ensure_clean_tree, get_run_provenance
 
     parser = argparse.ArgumentParser(description="Evaluate a saved model on the test set.")
+    parser.add_argument(
+        "--allow-dirty",
+        action="store_true",
+        help="Write the reports even if the git working tree has uncommitted changes.",
+    )
     add_run_args(parser)
     args = parser.parse_args()
     use_hour = not args.no_hour
+
+    ensure_clean_tree(args.allow_dirty)
 
     bundle = joblib.load(model_path(args.split, use_hour))
     if bundle["split"] != args.split or bundle["use_hour"] != use_hour:

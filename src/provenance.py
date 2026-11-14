@@ -36,8 +36,41 @@ def get_git_commit() -> str | None:
         return None
 
 
+def get_git_dirty() -> bool | None:
+    """Return True if the working tree has uncommitted changes, False if it is clean.
+
+    Uses `git status --porcelain` (ignored files such as data and models do not
+    count). Returns None if git is not available or this is not a git repository.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=Path(__file__).resolve().parent,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return bool(result.stdout.strip())
+    except (OSError, subprocess.CalledProcessError):
+        return None
+
+
+def ensure_clean_tree(allow_dirty: bool) -> None:
+    """Raise RuntimeError if the working tree has uncommitted changes.
+
+    Reports must come from committed code, so that the recorded git commit is the
+    code that produced them. allow_dirty=True skips the check (git_dirty is still
+    recorded as True in the provenance).
+    """
+    if get_git_dirty() and not allow_dirty:
+        raise RuntimeError(
+            "The git working tree has uncommitted changes, so the recorded commit would "
+            "not match the code. Commit your changes first, or pass --allow-dirty."
+        )
+
+
 def get_environment() -> dict:
-    """Return the Python and library versions and the current git commit."""
+    """Return the Python and library versions, the git commit and whether the tree is dirty."""
     return {
         "python": platform.python_version(),
         "pandas": pandas.__version__,
@@ -45,6 +78,7 @@ def get_environment() -> dict:
         "scikit-learn": sklearn.__version__,
         "optuna": optuna.__version__,
         "git_commit": get_git_commit(),
+        "git_dirty": get_git_dirty(),
     }
 
 

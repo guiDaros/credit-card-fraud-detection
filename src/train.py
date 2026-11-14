@@ -1,7 +1,11 @@
 """Model training functions.
 
 Run the full training pipeline with:
-    python -m src.train --trials 20 [--split {random,temporal}] [--no-hour]
+    python -m src.train --trials 20 [--split {random,temporal}] [--no-hour] [--allow-dirty]
+
+Refuses to run if the git working tree has uncommitted changes, unless --allow-dirty
+is passed. The model file stores a `provenance` dict (trials, CV PR-AUC, seed,
+versions, git commit, git_dirty, dataset sha256).
 
 The model is saved as models/model_<split>[_nohour].joblib.
 """
@@ -17,11 +21,12 @@ from sklearn.model_selection import StratifiedKFold, cross_val_predict
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer, StandardScaler
 
-from src.config import SEED, add_run_args, model_path
+from src.config import DATA_REPORT_PATH, SEED, add_run_args, model_path
 from src.cv import temporal_oof_proba
 from src.data import load_processed, split_data
 from src.evaluate import best_f1_threshold
 from src.features import add_features
+from src.provenance import ensure_clean_tree, get_run_provenance
 
 
 def train_baseline(X_train, y_train) -> Pipeline:
@@ -169,9 +174,17 @@ def main() -> None:
     """Tune, choose the threshold, train the final pipeline and save it."""
     parser = argparse.ArgumentParser(description="Train the fraud detection Random Forest.")
     parser.add_argument("--trials", type=int, default=20, help="Number of Optuna trials.")
+    parser.add_argument(
+        "--allow-dirty",
+        action="store_true",
+        help="Train even if the git working tree has uncommitted changes.",
+    )
     add_run_args(parser)
     args = parser.parse_args()
     use_hour = not args.no_hour
+
+    # Checked before the (long) training, not only before saving.
+    ensure_clean_tree(args.allow_dirty)
 
     # X_train keeps the raw columns; the pipeline computes the features itself.
     # The test set is not used anywhere in this script.
@@ -204,6 +217,17 @@ def main() -> None:
         "use_hour": use_hour,
         "split": args.split,
         "params": {**params, "class_weight": "balanced_subsample"},
+        "provenance": {
+            "n_trials": args.trials,
+            # Best out-of-fold PR-AUC found by Optuna on the training set
+            # (forward-in-time folds for split="temporal").
+            "cv_pr_auc": float(study.best_value),
+            "seed": SEED,
+            "split": args.split,
+            "use_hour": use_hour,
+            # dataset_sha256, library versions, git_commit and git_dirty.
+            **get_run_provenance(DATA_REPORT_PATH),
+        },
     }
     joblib.dump(bundle, path, compress=3)
 
