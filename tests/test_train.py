@@ -127,3 +127,33 @@ def test_pipeline_fails_clearly_on_missing_column(train_data, column):
 
     with pytest.raises(ValueError, match=column):
         pipeline.predict_proba(X.drop(columns=column))
+
+
+@pytest.mark.parametrize("split", ["random", "temporal"])
+def test_tune_searches_class_weight_and_uses_it(train_data, split, monkeypatch):
+    X, y = train_data
+    built_with = []
+    real_make_pipeline = train.make_pipeline
+
+    def spy_make_pipeline(use_hour=True, **params):
+        built_with.append(params["class_weight"])
+        return real_make_pipeline(use_hour=use_hour, **params)
+
+    monkeypatch.setattr(train, "make_pipeline", spy_make_pipeline)
+    study = train.tune(X, y, n_trials=4, split=split)
+
+    tried = [trial.params["class_weight"] for trial in study.trials]
+    assert all(weight in train.CLASS_WEIGHTS for weight in tried)
+    assert "class_weight" in study.best_params
+    # Every fold of a trial builds its pipeline with that trial's class_weight.
+    n_folds = len(built_with) // len(tried)
+    assert built_with == [weight for weight in tried for _ in range(n_folds)]
+
+
+def test_tune_is_reproducible_with_the_seed(train_data):
+    X, y = train_data
+    first = train.tune(X, y, n_trials=3, split="temporal")
+    second = train.tune(X, y, n_trials=3, split="temporal")
+
+    assert [t.params for t in first.trials] == [t.params for t in second.trials]
+    assert first.best_value == second.best_value

@@ -28,6 +28,10 @@ from src.evaluate import best_f1_threshold
 from src.features import make_feature_step
 from src.provenance import ensure_clean_tree, get_run_provenance
 
+# class_weight options searched by tune(). Notebook 02 found no clear difference
+# between them, so the choice is left to the tuning instead of being fixed.
+CLASS_WEIGHTS = [None, "balanced", "balanced_subsample"]
+
 
 def train_baseline(X_train, y_train) -> Pipeline:
     """Train a baseline: StandardScaler + LogisticRegression with balanced class weights.
@@ -121,6 +125,9 @@ def tune(X, y, n_trials: int, split: str = "random", use_hour: bool = True) -> o
     split="temporal" (X must be sorted by Time; PR-AUC uses only the rows that
     got a prediction). Pass ONLY the training set here; the test set must
     never be used for tuning.
+
+    The search space includes class_weight (CLASS_WEIGHTS), so study.best_params
+    always has a "class_weight" key.
     """
 
     def objective(trial: optuna.Trial) -> float:
@@ -129,6 +136,7 @@ def tune(X, y, n_trials: int, split: str = "random", use_hour: bool = True) -> o
             "max_depth": trial.suggest_int("max_depth", 6, 24),
             "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 10),
             "max_features": trial.suggest_categorical("max_features", ["sqrt", "log2", 0.3]),
+            "class_weight": trial.suggest_categorical("class_weight", CLASS_WEIGHTS),
         }
         y_eval, proba = oof_proba(
             lambda: make_pipeline(use_hour=use_hour, **params),
@@ -219,12 +227,15 @@ def main() -> None:
         "input_columns": list(X_train.columns),
         "use_hour": use_hour,
         "split": args.split,
-        "params": {**params, "class_weight": "balanced_subsample"},
+        # The tuned parameters, including the chosen class_weight.
+        "params": dict(params),
         "provenance": {
             "n_trials": args.trials,
             # Best out-of-fold PR-AUC found by Optuna on the training set
             # (forward-in-time folds for split="temporal").
             "cv_pr_auc": float(study.best_value),
+            # Chosen by the tuning among CLASS_WEIGHTS (None means no weighting).
+            "class_weight": params["class_weight"],
             "seed": SEED,
             "split": args.split,
             "use_hour": use_hour,

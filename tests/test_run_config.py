@@ -89,8 +89,13 @@ def test_train_then_evaluate_writes_named_outputs(tmp_path, monkeypatch, cli, su
     model_file = tmp_path / "models" / f"model_{suffix}.joblib"
     assert model_file.exists()
 
-    train_prov = joblib.load(model_file)["provenance"]
+    bundle = joblib.load(model_file)
+    train_prov = bundle["provenance"]
     assert train_prov["n_trials"] == 1
+    assert train_prov["class_weight"] in train.CLASS_WEIGHTS
+    assert train_prov["class_weight"] == bundle["params"]["class_weight"]
+    classifier = bundle["pipeline"].named_steps["classifier"]
+    assert classifier.class_weight == train_prov["class_weight"]
     assert 0 <= train_prov["cv_pr_auc"] <= 1
     assert train_prov["seed"] == config.SEED
     assert train_prov["split"] == ("random" if "random" in suffix else "temporal")
