@@ -115,6 +115,11 @@ def test_train_then_evaluate_writes_named_outputs(tmp_path, monkeypatch, cli, su
     assert metrics["provenance"]["git_dirty"] is False
     assert metrics["training_provenance"] == train_prov
     assert metrics["cv_pr_auc"] == train_prov["cv_pr_auc"]
+    for key in ("bootstrap_ci", "block_bootstrap_ci"):
+        for name in ("pr_auc", "precision", "recall", "f1"):
+            low, high = metrics[key][name]
+            assert 0 <= low <= high <= 1
+    assert metrics["block_bootstrap_ci"]["block_seconds"] == 3600
 
 
 @pytest.mark.parametrize("script", ["train", "evaluate"])
@@ -152,7 +157,9 @@ def test_build_metrics_without_training_provenance():
     y = np.array([0, 0, 1, 0, 1])
     proba = np.array([0.1, 0.2, 0.9, 0.3, 0.6])
 
-    metrics = evaluate.build_metrics(bundle, y, y, proba, provenance={"git_dirty": False})
+    time = np.array([0.0, 100.0, 4000.0, 5000.0, 9000.0])
+
+    metrics = evaluate.build_metrics(bundle, y, y, proba, time, provenance={"git_dirty": False})
 
     assert metrics["training_provenance"] is None
     assert metrics["cv_pr_auc"] is None
