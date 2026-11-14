@@ -42,9 +42,7 @@ class RecordingModel:
 
 def test_mask_excludes_first_block():
     X, y = make_data()
-    proba, mask = temporal_oof_proba(
-        lambda: LogisticRegression(), X, y, n_splits=N_SPLITS
-    )
+    proba, mask = temporal_oof_proba(lambda: LogisticRegression(), X, y, n_splits=N_SPLITS)
 
     # TimeSeriesSplit test blocks have size n // (n_splits + 1); the first
     # training block is everything before the first test block.
@@ -76,9 +74,7 @@ def test_skips_fold_without_both_classes(caplog):
     y.iloc[40:60] = 0
 
     with caplog.at_level(logging.WARNING):
-        proba, mask = temporal_oof_proba(
-            lambda: LogisticRegression(), X, y, n_splits=N_SPLITS
-        )
+        proba, mask = temporal_oof_proba(lambda: LogisticRegression(), X, y, n_splits=N_SPLITS)
 
     assert "Skipping fold 1" in caplog.text
     assert not mask[40:60].any()

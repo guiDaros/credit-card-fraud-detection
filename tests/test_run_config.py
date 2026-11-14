@@ -66,7 +66,9 @@ def make_processed_df(n_rows: int = 400) -> pd.DataFrame:
     return df
 
 
-@pytest.mark.parametrize("cli, suffix", [([], "temporal"), (["--split", "random", "--no-hour"], "random_nohour")])
+@pytest.mark.parametrize(
+    "cli, suffix", [([], "temporal"), (["--split", "random", "--no-hour"], "random_nohour")]
+)
 def test_train_then_evaluate_writes_named_outputs(tmp_path, monkeypatch, cli, suffix):
     df = make_processed_df()
     monkeypatch.setattr(config, "MODELS_DIR", tmp_path / "models")

@@ -32,8 +32,7 @@ def load_processed(path: Path = PROCESSED_PATH) -> pd.DataFrame:
     """Load the processed (deduplicated) dataset and validate it."""
     if not path.exists():
         raise FileNotFoundError(
-            f"Processed dataset not found at {path}. "
-            "Run 'python -m src.make_dataset' first."
+            f"Processed dataset not found at {path}. Run 'python -m src.make_dataset' first."
         )
 
     df = pd.read_parquet(path)

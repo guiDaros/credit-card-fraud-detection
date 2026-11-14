@@ -62,8 +62,7 @@ def get_run_provenance(data_report_path: Path) -> dict:
     data_report_path = Path(data_report_path)
     if not data_report_path.exists():
         raise FileNotFoundError(
-            f"Data report not found at {data_report_path}. "
-            "Run 'python -m src.make_dataset' first."
+            f"Data report not found at {data_report_path}. Run 'python -m src.make_dataset' first."
         )
     report = json.loads(data_report_path.read_text(encoding="utf-8"))
     return {"dataset_sha256": report["provenance"]["raw_sha256"], **get_environment()}

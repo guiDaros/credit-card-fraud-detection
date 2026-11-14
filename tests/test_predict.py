@@ -85,8 +85,12 @@ def test_predict_rejects_negative_amount(bundle):
         predict(new, bundle)
 
 
-@pytest.mark.parametrize("in_suffix, out_suffix", [(".csv", ".csv"), (".parquet", ".parquet"), (".csv", ".parquet")])
-def test_main_writes_output_and_logs(tmp_path, model_file, monkeypatch, caplog, in_suffix, out_suffix):
+@pytest.mark.parametrize(
+    "in_suffix, out_suffix", [(".csv", ".csv"), (".parquet", ".parquet"), (".csv", ".parquet")]
+)
+def test_main_writes_output_and_logs(
+    tmp_path, model_file, monkeypatch, caplog, in_suffix, out_suffix
+):
     new = make_raw(40, seed=2, with_class=False)
     in_path = tmp_path / f"new{in_suffix}"
     out_path = tmp_path / f"scored{out_suffix}"
@@ -96,7 +100,8 @@ def test_main_writes_output_and_logs(tmp_path, model_file, monkeypatch, caplog, 
         new.to_parquet(in_path, index=False)
 
     monkeypatch.setattr(
-        sys, "argv",
+        sys,
+        "argv",
         ["predict", "--input", str(in_path), "--model", str(model_file), "--output", str(out_path)],
     )
     with caplog.at_level(logging.INFO):
@@ -113,8 +118,17 @@ def test_main_rejects_unsupported_output(tmp_path, model_file, monkeypatch):
     in_path = tmp_path / "new.csv"
     make_raw(10, with_class=False).to_csv(in_path, index=False)
     monkeypatch.setattr(
-        sys, "argv",
-        ["predict", "--input", str(in_path), "--model", str(model_file), "--output", str(tmp_path / "out.xlsx")],
+        sys,
+        "argv",
+        [
+            "predict",
+            "--input",
+            str(in_path),
+            "--model",
+            str(model_file),
+            "--output",
+            str(tmp_path / "out.xlsx"),
+        ],
     )
     with pytest.raises(ValueError, match="Unsupported file type"):
         main()
