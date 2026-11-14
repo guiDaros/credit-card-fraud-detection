@@ -19,13 +19,13 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import average_precision_score
 from sklearn.model_selection import StratifiedKFold, cross_val_predict
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import FunctionTransformer, StandardScaler
+from sklearn.preprocessing import StandardScaler
 
 from src.config import DATA_REPORT_PATH, SEED, add_run_args, model_path
 from src.cv import temporal_oof_proba
 from src.data import load_processed, split_data
 from src.evaluate import best_f1_threshold
-from src.features import add_features
+from src.features import make_feature_step
 from src.provenance import ensure_clean_tree, get_run_provenance
 
 
@@ -56,16 +56,19 @@ def make_rf(**params) -> RandomForestClassifier:
 
 
 def make_pipeline(use_hour: bool = True, **rf_params) -> Pipeline:
-    """Create an (unfitted) pipeline: add_features + Random Forest.
+    """Create an (unfitted) pipeline: feature step + Random Forest.
 
     The pipeline takes the raw columns (Time, V1..V28, Amount), so whoever uses
-    the model does not need to recreate the features. The Random Forest uses
-    class_weight="balanced_subsample" by default; other keyword arguments go to make_rf.
+    the model does not need to recreate the features. The feature step
+    (make_feature_step) uses only scikit-learn, numpy and the standard library, so
+    the saved pipeline loads without this project's `src` package. The Random Forest
+    uses class_weight="balanced_subsample" by default; other keyword arguments go to
+    make_rf.
     """
     rf_params = {"class_weight": "balanced_subsample", **rf_params}
     return Pipeline(
         [
-            ("features", FunctionTransformer(add_features, kw_args={"use_hour": use_hour})),
+            ("features", make_feature_step(use_hour)),
             ("classifier", make_rf(**rf_params)),
         ]
     )
@@ -109,7 +112,7 @@ def oof_proba(model_factory, X, y, split: str, n_splits: int):
 
 
 def tune(X, y, n_trials: int, split: str = "random", use_hour: bool = True) -> optuna.Study:
-    """Tune the pipeline (add_features + Random Forest) with Optuna to maximize PR-AUC.
+    """Tune the pipeline (feature step + Random Forest) with Optuna to maximize PR-AUC.
 
     X has the raw columns; features are computed inside each fold.
 

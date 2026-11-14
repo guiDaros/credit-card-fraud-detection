@@ -6,7 +6,7 @@ import pytest
 
 from src.config import TARGET
 from src.data import split_data
-from src.features import add_features
+from src.features import add_features, feature_names, make_feature_step
 
 
 @pytest.fixture
@@ -118,3 +118,20 @@ def test_split_data_default_is_temporal(synthetic_df):
 def test_split_data_rejects_unknown_method(synthetic_df):
     with pytest.raises(ValueError):
         split_data(synthetic_df, method="other")
+
+
+@pytest.mark.parametrize("use_hour", [True, False])
+def test_feature_step_matches_add_features(synthetic_df, use_hour):
+    X = synthetic_df.drop(columns=TARGET)
+    step_out = make_feature_step(use_hour).fit_transform(X)
+    expected = add_features(X, use_hour=use_hour)
+
+    # Same names, same order, same values (Hour is float in the step, int in add_features).
+    assert list(step_out.columns) == feature_names(use_hour)
+    assert list(step_out.columns) == list(expected.columns)
+    pd.testing.assert_frame_equal(step_out, expected, check_dtype=False)
+
+
+def test_feature_names_order():
+    assert feature_names(True) == [f"V{i}" for i in range(1, 29)] + ["Amount_log", "Hour"]
+    assert feature_names(False) == [f"V{i}" for i in range(1, 29)] + ["Amount_log"]
