@@ -19,31 +19,49 @@ metrics:
 
 [![CI](https://github.com/guiDaros/credit-card-fraud-detection/actions/workflows/ci.yml/badge.svg)](https://github.com/guiDaros/credit-card-fraud-detection/actions/workflows/ci.yml)
 
+Code: [github.com/guiDaros/credit-card-fraud-detection](https://github.com/guiDaros/credit-card-fraud-detection)
+
 ## Summary
 
-Personal machine learning project focused on financial fraud detection. A Random Forest
-classifier is trained to flag fraudulent credit card transactions in a highly imbalanced
-dataset (about 0.17% fraud). Hyperparameters are tuned with Optuna to maximize PR-AUC,
-and the decision threshold is chosen with cross-validation on the training data.
+Personal machine learning project on credit card fraud detection. A Random Forest flags
+fraudulent transactions in a highly imbalanced dataset (about 0.17% fraud). The saved model
+is a scikit-learn pipeline that takes the raw columns, computes its own features and
+returns a fraud score; a decision threshold chosen on the training data turns the score
+into a fraud / not-fraud flag.
 
-This is a learning project, not a production system. The reported results use a
-temporal train/test split (train on the past, test on the most recent 20% of the time
-range).
+The main evaluation uses a **temporal split**: the model is trained on the past and tested
+on the most recent 20% of the transactions. On that test set it reaches a PR-AUC of
+**0.817** (95% bootstrap interval 0.736-0.901), detecting 57 of 74 frauds with 8 false
+alarms among 56,670 legitimate transactions. The test set is small in frauds, so these
+numbers are uncertain.
+
+This is a learning project, not a production system.
 
 ## Dataset
 
 [Credit Card Fraud Detection](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud)
 from Kaggle (`mlg-ulb/creditcardfraud`):
 
-- 284,807 transactions made by European cardholders over two days in September 2013.
-- 492 frauds (about 0.17% of all transactions).
+- Transactions made by European cardholders over two days in September 2013.
 - Features `V1`-`V28` are the result of a PCA transformation; the original features are
   not available for confidentiality reasons. `Time` (seconds since the first transaction)
   and `Amount` are not transformed. The target is `Class` (1 = fraud, 0 = legitimate).
 - License: [Database Contents License (DbCL) v1.0](https://opendatacommons.org/licenses/dbcl/1-0/).
 
+From `reports/data_report.json`:
+
+| | Rows | Frauds | Fraud rate |
+|---|---|---|---|
+| Raw `creditcard.csv` | 284,807 | 492 | 0.173% |
+| After removing exact duplicates | 283,726 | 473 | 0.167% |
+
+- **Duplicates removed:** 1,081 exact duplicate rows (19 of them frauds).
+- **sha256 of `creditcard.csv`:**
+  `76274b691b16a6c49d3f159c883398e03ccd6d1ee12d9d8ee38f4b4b98551a89`
+
 The dataset is not included in this repository. Download `creditcard.csv` from Kaggle and
-place it in `data/raw/`.
+place it in `data/raw/`. You can check that you have the same file with
+`sha256sum data/raw/creditcard.csv`.
 
 **Citation:**
 
@@ -53,182 +71,216 @@ place it in `data/raw/`.
 
 ## Approach
 
-- **Data cleaning:** exact duplicate rows are removed and the data is sorted by `Time`
-  (`src/make_dataset.py`), producing `data/processed/transactions.parquet`.
-- **Features:** `Amount` is replaced by `Amount_log = log1p(Amount)` and `Time` by
-  `Hour = (Time // 3600) % 24` (hour relative to the first transaction). `Hour` can be
-  turned off with `--no-hour`, to compare models with and without it. `V1`-`V28` are
-  used as they are. Each new feature uses only its own row, so there is no leakage.
-- **Pipeline:** the saved model is a scikit-learn `Pipeline` (feature step + Random
-  Forest), so it takes the raw columns (`Time`, `V1`-`V28`, `Amount`) and features are
-  computed inside each cross-validation fold.
+- **Data cleaning** (`src/make_dataset.py`): the raw CSV is validated with a pandera
+  schema, exact duplicate rows are removed, and the data is sorted by `Time`.
+- **Pipeline with packaged features:** the saved model is a scikit-learn `Pipeline`:
+  1. a feature step that adds `Amount_log = log1p(Amount)` and, optionally,
+     `Hour = (Time // 3600) % 24` (hour relative to the first transaction), then drops
+     `Time` and `Amount`;
+  2. a Random Forest.
+
+  The pipeline takes the raw columns (`Time`, `V1`-`V28`, `Amount`), so users do not need
+  to recreate the features, and the features are computed inside each cross-validation
+  fold. `--no-hour` trains a model without `Hour`.
 - **Split** (`--split`, default `temporal`):
-  - `temporal`: the last 20% of the time range is the test set; train is everything
-    before it.
-  - `random`: stratified 80/20 split with a fixed seed.
+  - `temporal`: rows up to the 80% quantile of `Time` are train, later rows are test.
+  - `random`: stratified random 80/20 split with a fixed seed.
 
   The test set is used only once, for the final evaluation.
-- **Class imbalance:** handled with `class_weight="balanced_subsample"` in the Random
-  Forest, with no resampling. Accuracy is not used, because always predicting
-  "legitimate" would already score about 99.8%.
-- **Cross-validation:** with `--split temporal`, out-of-fold predictions come from a
-  forward-in-time split (`TimeSeriesSplit`): each fold is trained on the past and
-  predicts the next block, and the first block is never scored. With `--split random`,
-  stratified K-fold is used.
-- **Tuning:** Optuna (TPE sampler, fixed seed) maximizes PR-AUC (average precision),
-  computed from 3-fold out-of-fold predictions on the training set. Search space:
+- **Class imbalance:** `class_weight="balanced_subsample"` in the Random Forest, no
+  resampling. Accuracy is not used, because always predicting "legitimate" would already
+  score about 99.8%.
+- **Tuning:** Optuna (TPE sampler, fixed seed, 20 trials) maximizes PR-AUC (average
+  precision) on out-of-fold predictions from the training set. Search space:
   `n_estimators` 100-400, `max_depth` 6-24, `min_samples_leaf` 1-10, `max_features` in
   {`sqrt`, `log2`, 0.3}.
-- **Threshold:** chosen to maximize F1 on 5-fold out-of-fold probabilities on the
-  training set, never on the test set.
-- **Final model:** trained on the full training set with the best parameters.
+- **Temporal validation:** with the temporal split, out-of-fold predictions come from a
+  forward-in-time split (`TimeSeriesSplit`): each fold is trained on the past and predicts
+  the next block; the first block is never scored. With the random split, stratified
+  K-fold is used.
+- **Threshold:** chosen to maximize F1 on the out-of-fold probabilities of the training
+  set (5 folds), never on the test set, and stored in the model file.
+- **Final model:** refit on the full training set with the best parameters.
 
 ## Results
 
-Configuration: temporal split, with `Hour` (`models/model_temporal.joblib`,
-`reports/metrics_temporal.json`). Tuned with 20 Optuna trials.
+Source: `reports/metrics_*.json`, with the 95% confidence intervals computed in
+[`notebooks/03_split_comparison.ipynb`](notebooks/03_split_comparison.ipynb) (percentile
+bootstrap of the test set, 1,000 resamples). Precision, recall and F1 use the threshold
+chosen by cross-validation.
 
-- **Train:** 226,982 transactions, 399 frauds (fraud rate 0.0018).
-- **Test:** the last 20% of the time range, 56,744 transactions, 74 frauds (fraud rate
-  0.0013).
+| Configuration | PR-AUC [95% CI] | Precision [95% CI] | Recall [95% CI] | F1 [95% CI] | Test frauds | Fraud rate train / test |
+|---|---|---|---|---|---|---|
+| random | *missing: not run yet* | — | — | — | — | — |
+| **temporal** | **0.817** [0.736, 0.901] | 0.877 [0.792, 0.953] | 0.770 [0.672, 0.870] | 0.820 [0.748, 0.890] | 74 | 0.176% / 0.130% |
+| temporal, no `Hour` | *missing: not run yet* | — | — | — | — | — |
 
-**PR-AUC (average precision)**
+The `random` and `temporal, no Hour` configurations still need to be run
+(`make train-random evaluate-random` and
+`make train-temporal-nohour evaluate-temporal-nohour`). Until then it is **not known**
+whether the random split overestimates performance, or whether `Hour` helps.
 
-| Model | PR-AUC |
-|---|---|
-| Random baseline (≈ fraud rate) | 0.0013 |
-| Random Forest, temporal CV on train (best Optuna trial) | 0.780 |
-| **Random Forest, test set** | **0.817** |
+Details of the temporal model (`reports/metrics_temporal.json`):
 
-The test PR-AUC is a bit higher than the CV estimate. With only 74 test frauds this gap
-is within the expected noise.
+- **Train:** 226,982 transactions, 399 frauds. **Test:** 56,744 transactions, 74 frauds.
+- **Threshold:** 0.3594. At this threshold: 57 frauds caught, 17 missed, 8 false alarms,
+  56,662 correct "legitimate".
+- **Parameters:** `n_estimators=122`, `max_depth=17`, `min_samples_leaf=6`,
+  `max_features="log2"`, `class_weight="balanced_subsample"`.
+- The fraud rate is lower in the test period (0.130%) than in training (0.176%).
 
-**Random Forest at two thresholds (test set)**
+![Precision-Recall curve, temporal model](reports/pr_curve_temporal.png)
 
-| Threshold | Precision | Recall | F1 | TP | FP | FN | TN |
-|---|---|---|---|---|---|---|---|
-| 0.5 (default) | 0.929 | 0.703 | 0.800 | 52 | 4 | 22 | 56,666 |
-| 0.3594 (chosen via CV) | 0.877 | 0.770 | 0.820 | 57 | 8 | 17 | 56,662 |
+## Precision/recall trade-off
 
-At the chosen threshold, the model detects 57 of the 74 frauds in the test set and
-raises 8 false alarms out of 56,670 legitimate transactions.
+Temporal model, test set, from notebook 03. False alarms per 10,000 counts all test
+transactions.
 
-**Model parameters:** `n_estimators=122`, `max_depth=17`, `min_samples_leaf=6`,
-`max_features="log2"`, `class_weight="balanced_subsample"`.
+| Threshold | Precision | Recall | Frauds caught | False alarms | False alarms per 10k |
+|---|---|---|---|---|---|
+| 0.1 | 0.517 | 0.811 | 60 / 74 | 56 | 9.87 |
+| 0.2 | 0.756 | 0.797 | 59 / 74 | 19 | 3.35 |
+| 0.3 | 0.841 | 0.784 | 58 / 74 | 11 | 1.94 |
+| 0.4 | 0.875 | 0.757 | 56 / 74 | 8 | 1.41 |
+| 0.5 | 0.929 | 0.703 | 52 / 74 | 4 | 0.70 |
+| 0.6 | 0.981 | 0.689 | 51 / 74 | 1 | 0.18 |
+| 0.7 | 0.979 | 0.622 | 46 / 74 | 1 | 0.18 |
+| 0.8 | 1.000 | 0.554 | 41 / 74 | 0 | 0.00 |
+| 0.9 | 1.000 | 0.459 | 34 / 74 | 0 | 0.00 |
 
-![Precision-Recall curve](reports/pr_curve_temporal.png)
-
-A run without `Hour` (`--no-hour`) and a run with the random split have not been
-evaluated yet with the current code.
+This table is descriptive only: it is computed on the test set, so it was not used to
+choose the threshold (0.3594, chosen on the training data). Neighbouring rows often differ
+by only 1-5 frauds, which is within the uncertainty shown above.
 
 ## How to run
 
+Requires Python 3.11+ and `make`.
+
 ```bash
-# 1. Create a virtual environment and install the dependencies
-python -m venv .venv
-source .venv/bin/activate        # Windows (Git Bash): source .venv/Scripts/activate
-pip install -r requirements.txt
-
-# 2. Download creditcard.csv from Kaggle into data/raw/
-
-# 3. Run the tests
-pytest
-
-# 4. Remove duplicates and sort by Time -> data/processed/transactions.parquet
-python -m src.make_dataset
-
-# 5. Tune, choose the threshold and train the final model -> models/model_temporal.joblib
-python -m src.train --trials 20
-
-# 6. Evaluate on the test set -> reports/metrics_temporal.json, reports/pr_curve_temporal.png
-python -m src.evaluate
-
-# 7. (Optional) Publish to the Hugging Face Hub (requires `hf auth login`)
-python -m src.publish --repo your-username/credit-card-fraud-rf
+python3 -m venv .venv
+make setup                      # pip install -r requirements.txt (uses .venv if it exists)
+# download creditcard.csv from Kaggle into data/raw/
+make data                       # -> data/processed/transactions.parquet, reports/data_report.json
+make train-temporal             # -> models/model_temporal.joblib
+make evaluate-temporal          # -> reports/metrics_temporal.json, reports/pr_curve_temporal.png
 ```
 
-`train`, `evaluate` and `publish` accept `--split {random,temporal}` (default `temporal`)
-and `--no-hour`. Use the same options in all three. The file names follow the
-configuration: `model_temporal.joblib`, `model_random.joblib`, `model_temporal_nohour.joblib`,
-and the same suffixes for `metrics_*.json` and `pr_curve_*.png`. Each metrics file also
-records the split, `use_hour`, train/test row and fraud counts, the dataset sha256, the
-library versions and the git commit.
+| Target | What it does |
+|---|---|
+| `setup` | Install the dependencies |
+| `data` | Validate, deduplicate and sort the raw CSV |
+| `train-random`, `train-temporal`, `train-temporal-nohour` | Tune, choose the threshold and train one configuration |
+| `evaluate-random`, `evaluate-temporal`, `evaluate-temporal-nohour` | Evaluate that configuration on its test set |
+| `test` | Run the tests (`pytest -q`); they use synthetic data only |
+| `lint` | `ruff check .` |
+| `all` | `data`, the three trains, then the three evaluates (run without `-j`) |
 
-The notebooks in `notebooks/` contain the data exploration and the model comparison.
+Variables: `TRIALS` (Optuna trials, default 20), e.g. `make train-temporal TRIALS=5`, and
+`PYTHON` (default `.venv/bin/python` if it exists).
+
+Each metrics file records the split, `use_hour`, train/test row and fraud counts, the
+dataset sha256, the library versions and the git commit. After the three configurations
+are evaluated, run `notebooks/03_split_comparison.ipynb` for the comparison table, PR
+curves, drift test, trade-off table and feature importance.
+
+Other commands:
+
+```bash
+# Score a CSV or parquet file with the raw columns -> adds score and is_fraud
+python -m src.predict --input new.csv --model models/model_temporal.joblib --output scored.csv
+
+# Publish one configuration to the Hugging Face Hub (requires `hf auth login`)
+python -m src.publish --repo your-username/credit-card-fraud-rf --split temporal
+```
 
 ## How to use the model
 
-> `model.joblib` is a pickle-based file. Loading a pickle can run arbitrary code, so
-> only load files from sources you trust.
+> The `.joblib` files are pickle-based. Loading a pickle can run arbitrary code, so only
+> load files from sources you trust.
+
+The feature step of the pipeline calls `src.features.add_features`, so loading the model
+needs this project's `src` package. Clone the
+[GitHub repository](https://github.com/guiDaros/credit-card-fraud-detection), install
+`requirements.txt` and run the code from the repository root:
 
 ```python
 import joblib
 import pandas as pd
 from huggingface_hub import hf_hub_download
 
+from src.predict import predict
+
 path = hf_hub_download(
     repo_id="guilhermedaros/credit-card-fraud-rf", filename="model_temporal.joblib"
 )
 bundle = joblib.load(path)
 
-pipeline = bundle["pipeline"]        # fitted Pipeline: features + RandomForestClassifier
-threshold = bundle["threshold"]      # decision threshold chosen via CV
-columns = bundle["input_columns"]    # raw columns: Time, V1..V28, Amount
-
-# The pipeline computes the features itself; just pass the raw columns.
+# Raw columns: Time, V1..V28, Amount (Class is not needed).
 df = pd.read_csv("transactions.csv")
-proba = pipeline.predict_proba(df[columns])[:, 1]
-is_fraud = proba >= threshold
+
+# Validates the columns, then adds `score` and `is_fraud` (score >= bundle["threshold"]).
+scored = predict(df, bundle)
+print(scored["is_fraud"].sum(), "transactions flagged")
+
+# Or call the pipeline directly:
+proba = bundle["pipeline"].predict_proba(df[bundle["input_columns"]])[:, 1]
 ```
 
-The bundle also stores `use_hour`, `split` and `params`. The model needs this project's
-`src` package on the Python path (the feature step calls `src.features.add_features`) and
-a compatible scikit-learn version (see `requirements.txt`).
+The bundle stores `pipeline`, `threshold`, `input_columns`, `use_hour`, `split` and
+`params`. Use a scikit-learn version compatible with `requirements.txt`.
 
 ## Project structure
 
 ```
-├── data/raw/            # creditcard.csv (not versioned)
-├── data/processed/      # transactions.parquet (deduplicated, sorted by Time)
-├── models/              # model_<split>[_nohour].joblib (not versioned)
+├── .github/workflows/ci.yml   # ruff + pytest on push and pull request
+├── data/raw/                  # creditcard.csv (not versioned)
+├── data/processed/            # transactions.parquet (not versioned)
+├── models/                    # model_<split>[_nohour].joblib (not versioned)
 ├── notebooks/
 │   ├── 01_exploration.ipynb
-│   └── 02_modeling.ipynb
-├── reports/             # data_report.json, metrics_*.json, pr_curve_*.png
+│   ├── 02_modeling.ipynb
+│   └── 03_split_comparison.ipynb   # CIs, PR curves, drift, trade-off, importance
+├── reports/                   # data_report.json, metrics_*.json, pr_curve_*.png
 ├── src/
-│   ├── config.py        # paths, constants, run options and output names
-│   ├── schema.py        # data schema validation
-│   ├── make_dataset.py  # raw -> processed (deduplication, sort by Time)
-│   ├── provenance.py    # data hash, library versions, git commit
-│   ├── data.py          # load_data, load_processed, split_data
-│   ├── features.py      # add_features
-│   ├── cv.py            # temporal out-of-fold predictions
-│   ├── train.py         # baseline, pipeline, Optuna tuning, threshold, main
-│   ├── evaluate.py      # metrics, PR curve, main
-│   └── publish.py       # upload to the Hugging Face Hub
-├── tests/
+│   ├── config.py              # paths, constants, run options and output names
+│   ├── schema.py              # pandera schemas (raw data and data to score)
+│   ├── make_dataset.py        # raw -> processed (validation, deduplication, sort)
+│   ├── provenance.py          # data hash, library versions, git commit
+│   ├── data.py                # load_data, load_processed, split_data
+│   ├── features.py            # add_features
+│   ├── cv.py                  # temporal out-of-fold predictions
+│   ├── train.py               # pipeline, Optuna tuning, threshold, main
+│   ├── evaluate.py            # metrics, PR curve, main
+│   ├── predict.py             # score new data from the command line
+│   └── publish.py             # upload to the Hugging Face Hub
+├── tests/                     # pytest, synthetic data only
+├── Makefile
+├── pyproject.toml             # ruff and pytest configuration
 ├── requirements.txt
 └── LICENSE
 ```
 
 ## Limitations
 
+- **Only two days of 2013:** the data covers two days of September 2013 from European
+  cardholders. Fraud patterns change over time, so performance on newer or different data
+  is unknown.
+- **Short temporal test with few frauds:** the temporal test set covers only the last
+  hours of the second day (hours 16-23 relative to the first transaction) and has 74
+  frauds. Each fraud changes recall by about 1.4 points, and the 95% interval for PR-AUC
+  is about 0.17 wide.
+- **Drift:** in notebook 03, the 10 most important features have clearly different
+  distributions in the temporal train and test sets (Kolmogorov-Smirnov D 6 to 95 times
+  larger than between the train and test of a random split; largest for `V3`). Part of
+  this may be a time-of-day effect, which two days of data cannot separate from a longer
+  trend. How much the drift affects performance was not measured.
 - **Anonymized features:** `V1`-`V28` are PCA components, so the model cannot be
-  interpreted in terms of real transaction attributes, and it cannot be applied to data
-  that was not transformed in the same way.
-- **Narrow time window:** the data covers only two days of September 2013 from European
-  cardholders. Fraud patterns change over time, so performance on newer or different
-  data is unknown.
-- **Random split may be optimistic:** with `--split random`, train and test are mixed in
-  time, while in a real setting the model predicts future transactions. The default
-  `--split temporal` avoids this, but its test set covers only the last part of a
-  two-day window. The 1,081 exact duplicate rows are removed before splitting.
-- **Few frauds, high variance:** the test set has only 74 frauds, so each one changes
-  recall by about 1.4 points. The metrics have noticeable uncertainty.
-- **Limited tuning:** the results above used 20 Optuna trials.
-- **No calibration and no fairness analysis:** the predicted probabilities are not
-  calibrated and should not be read as true fraud probabilities. No fairness or bias
-  analysis was done.
+  explained in terms of real transaction attributes, and it can only be applied to data
+  transformed in the same way.
+- **Incomplete comparison:** the random-split and no-`Hour` configurations have not been
+  run yet (see [Results](#results)).
+- **No calibration and no fairness analysis:** the scores are not calibrated and should
+  not be read as true fraud probabilities. No fairness or bias analysis was done.
 - **Not for production use:** this is a personal learning project. Do not use it to make
   real decisions about transactions or customers.
 
