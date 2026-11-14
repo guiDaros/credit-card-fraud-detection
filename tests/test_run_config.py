@@ -9,12 +9,14 @@ import numpy as np
 import pandas as pd
 import pytest
 
+import src.baseline as baseline
 import src.config as config
 import src.data as data
 import src.evaluate as evaluate
 import src.provenance as provenance
 import src.train as train
 from src.config import TARGET, add_run_args, metrics_path, model_path, pr_curve_path, run_suffix
+from src.data import split_data
 
 
 def parse(argv):
@@ -97,6 +99,8 @@ def test_train_then_evaluate_writes_named_outputs(tmp_path, monkeypatch, cli, su
     classifier = bundle["pipeline"].named_steps["classifier"]
     assert classifier.class_weight == train_prov["class_weight"]
     assert 0 <= train_prov["cv_pr_auc"] <= 1
+    assert train_prov["cv"]["n_splits"] == train.TUNE_N_SPLITS
+    assert 0 < train_prov["cv"]["n_rows"] <= len(df)
     assert train_prov["seed"] == config.SEED
     assert train_prov["split"] == ("random" if "random" in suffix else "temporal")
     assert train_prov["use_hour"] == ("nohour" not in suffix)
@@ -125,9 +129,51 @@ def test_train_then_evaluate_writes_named_outputs(tmp_path, monkeypatch, cli, su
             low, high = metrics[key][name]
             assert 0 <= low <= high <= 1
     assert metrics["block_bootstrap_ci"]["block_seconds"] == 3600
+    period = metrics["test_period"]
+    assert period["first_time"] <= period["last_time"]
+    assert period["first_hour"] == int(period["first_time"] // 3600)
+    assert 0 <= period["last_hour_of_day"] <= 23
 
 
-@pytest.mark.parametrize("script", ["train", "evaluate"])
+def test_baseline_writes_report_from_train_only(tmp_path, monkeypatch):
+    df = make_processed_df()
+    monkeypatch.setattr(config, "REPORTS_DIR", tmp_path / "reports")
+    monkeypatch.setattr(baseline, "load_processed", lambda: df.copy())
+    report_path = tmp_path / "data_report.json"
+    report_path.write_text(json.dumps({"provenance": {"raw_sha256": "abc123"}}))
+    monkeypatch.setattr(baseline, "DATA_REPORT_PATH", report_path)
+    monkeypatch.setattr(provenance, "get_git_dirty", lambda: False)
+
+    _, X_test, _, _ = split_data(df, method="temporal")
+    cv_times = []
+    real_oof = baseline.oof_proba
+
+    def spy_oof(model_factory, X, y, split, n_splits):
+        cv_times.append(X["Time"].max())
+        return real_oof(model_factory, X, y, split=split, n_splits=n_splits)
+
+    monkeypatch.setattr(baseline, "oof_proba", spy_oof)
+    monkeypatch.setattr(sys, "argv", ["baseline"])
+    baseline.main()
+
+    assert len(cv_times) == 2  # cv_pr_auc folds and threshold folds
+    assert all(t < X_test["Time"].min() for t in cv_times)  # CV uses training rows only
+
+    metrics = json.loads((tmp_path / "reports" / "metrics_baseline_temporal.json").read_text())
+    assert metrics["model"] == "logistic_regression"
+    assert metrics["split"] == "temporal"
+    assert metrics["n_test"] == len(X_test)
+    assert 0 <= metrics["pr_auc"] <= 1
+    assert 0 <= metrics["cv_pr_auc"] <= 1
+    assert metrics["training_provenance"]["cv"]["n_splits"] == train.TUNE_N_SPLITS
+    assert metrics["params"] == train.BASELINE_PARAMS
+    assert metrics["provenance"]["dataset_sha256"] == "abc123"
+    for key in ("bootstrap_ci", "block_bootstrap_ci"):
+        assert set(evaluate.BOOTSTRAP_METRICS) <= set(metrics[key])
+    assert "test_period" in metrics
+
+
+@pytest.mark.parametrize("script", ["train", "evaluate", "baseline"])
 def test_scripts_refuse_dirty_tree(tmp_path, monkeypatch, script):
     monkeypatch.setattr(config, "MODELS_DIR", tmp_path / "models")
     monkeypatch.setattr(config, "REPORTS_DIR", tmp_path / "reports")
@@ -135,7 +181,7 @@ def test_scripts_refuse_dirty_tree(tmp_path, monkeypatch, script):
     monkeypatch.setattr(sys, "argv", [script])
 
     with pytest.raises(RuntimeError, match="--allow-dirty"):
-        {"train": train, "evaluate": evaluate}[script].main()
+        {"train": train, "evaluate": evaluate, "baseline": baseline}[script].main()
     assert not (tmp_path / "models").exists()
     assert not (tmp_path / "reports").exists()
 

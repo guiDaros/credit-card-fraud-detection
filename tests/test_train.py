@@ -150,6 +150,31 @@ def test_tune_searches_class_weight_and_uses_it(train_data, split, monkeypatch):
     assert built_with == [weight for weight in tried for _ in range(n_folds)]
 
 
+@pytest.mark.parametrize("split", ["random", "temporal"])
+def test_tune_records_cv_rows(train_data, split):
+    X, y = train_data
+    study = train.tune(X, y, n_trials=1, split=split)
+    cv = study.best_trial.user_attrs["cv"]
+
+    expected_rows = N_ROWS if split == "random" else expected_temporal_rows(X, y, 3)
+    assert cv["n_splits"] == train.TUNE_N_SPLITS
+    assert cv["scheme"] == ("stratified_kfold" if split == "random" else "time_series_split")
+    assert cv["n_rows"] == expected_rows
+    assert 0 < cv["n_frauds"] <= int(y.sum())
+    assert cv["fraud_rate"] == pytest.approx(cv["n_frauds"] / cv["n_rows"])
+
+
+def test_baseline_pipeline_predicts_on_raw_dataframe(train_data):
+    X, y = train_data
+    pipeline = train.make_baseline_pipeline().fit(X, y)
+
+    proba = pipeline.predict_proba(X)[:, 1]
+
+    assert proba.shape == (N_ROWS,)
+    assert list(pipeline.feature_names_in_) == RAW_COLUMNS
+    assert pipeline.named_steps["classifier"].class_weight == "balanced"
+
+
 def test_tune_is_reproducible_with_the_seed(train_data):
     X, y = train_data
     first = train.tune(X, y, n_trials=3, split="temporal")

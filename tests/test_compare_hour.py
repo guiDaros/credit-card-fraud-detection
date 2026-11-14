@@ -1,11 +1,14 @@
 """Tests for scripts/compare_hour.py, using small synthetic data."""
 
+import json
 import sys
 
 import numpy as np
 import pandas as pd
+import pytest
 
 import scripts.compare_hour as compare_hour
+import src.provenance as provenance
 from src.config import TARGET
 from src.data import split_data
 
@@ -36,7 +39,29 @@ def test_compare_hour_scores_same_folds():
         assert all(0 <= v <= 1 for v in values)
 
 
-def test_main_uses_only_the_training_set(monkeypatch, capsys):
+def test_build_report_pairs_folds():
+    scores = {"with_hour": [0.8, 0.6, 0.7], "without_hour": [0.7, 0.6, 0.5]}
+    y = np.array([0, 1, 0, 0, 1])
+
+    report = compare_hour.build_report(scores, dict(PARAMS), "test", 3, y)
+
+    assert report["difference"]["per_fold"] == pytest.approx([0.1, 0.0, 0.2])
+    assert report["difference"]["mean"] == pytest.approx(0.1)
+    assert report["difference"]["std"] == pytest.approx(0.1)
+    assert report["with_hour"]["mean"] == pytest.approx(0.7)
+    assert report["n_splits"] == 3
+    assert report["n_scored_folds"] == 3
+    assert report["n_train"] == 5
+    assert report["n_train_frauds"] == 2
+    assert report["params"] == PARAMS
+    json.dumps(report)  # must be valid JSON (no numpy types)
+
+
+def test_summarize_with_one_fold_has_no_std():
+    assert compare_hour.summarize([0.5]) == {"mean": 0.5, "std": None}
+
+
+def test_main_uses_only_the_training_set(monkeypatch, capsys, tmp_path):
     df = make_processed_df()
     _, X_test, _, _ = split_data(df, method="temporal")
     seen_times = []
@@ -49,7 +74,10 @@ def test_main_uses_only_the_training_set(monkeypatch, capsys):
     monkeypatch.setattr(compare_hour, "load_processed", lambda: df.copy())
     monkeypatch.setattr(compare_hour, "temporal_oof_proba", spy_oof)
     monkeypatch.setattr(compare_hour, "load_params", lambda path: (dict(PARAMS), "test"))
-    monkeypatch.setattr(sys, "argv", ["compare_hour", "--n-splits", "3"])
+    monkeypatch.setattr(provenance, "get_git_dirty", lambda: False)
+    monkeypatch.setattr(compare_hour, "get_run_provenance", lambda path: {"git_dirty": False})
+    output = tmp_path / "compare_hour.json"
+    monkeypatch.setattr(sys, "argv", ["compare_hour", "--n-splits", "3", "--output", str(output)])
 
     compare_hour.main()
 
@@ -58,3 +86,19 @@ def test_main_uses_only_the_training_set(monkeypatch, capsys):
         assert times.max() < X_test["Time"].min()  # no test row reaches the CV
         assert np.all(np.diff(times) >= 0)  # sorted by Time
     assert "Test set not used" in capsys.readouterr().out
+
+    report = json.loads(output.read_text())
+    X_train, _, _, _ = split_data(df, method="temporal")
+    assert report["n_train"] == len(X_train)
+    assert report["n_scored_folds"] == len(report["with_hour"]["per_fold"])
+    assert report["provenance"] == {"git_dirty": False}
+
+
+def test_main_refuses_dirty_tree(monkeypatch, tmp_path):
+    monkeypatch.setattr(provenance, "get_git_dirty", lambda: True)
+    output = tmp_path / "compare_hour.json"
+    monkeypatch.setattr(sys, "argv", ["compare_hour", "--output", str(output)])
+
+    with pytest.raises(RuntimeError, match="--allow-dirty"):
+        compare_hour.main()
+    assert not output.exists()

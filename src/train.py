@@ -5,7 +5,8 @@ Run the full training pipeline with:
 
 Refuses to run if the git working tree has uncommitted changes, unless --allow-dirty
 is passed. The model file stores a `provenance` dict (trials, CV PR-AUC, seed,
-versions, git commit, git_dirty, dataset sha256).
+CV folds/rows/frauds behind the CV PR-AUC, versions, git commit, git_dirty,
+dataset sha256).
 
 The model is saved as models/model_<split>[_nohour].joblib.
 """
@@ -13,6 +14,7 @@ The model is saved as models/model_<split>[_nohour].joblib.
 import argparse
 
 import joblib
+import numpy as np
 import optuna
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
@@ -32,23 +34,45 @@ from src.provenance import ensure_clean_tree, get_run_provenance
 # between them, so the choice is left to the tuning instead of being fixed.
 CLASS_WEIGHTS = [None, "balanced", "balanced_subsample"]
 
+# Number of CV folds: Optuna scores each trial with TUNE_N_SPLITS folds (this gives
+# cv_pr_auc), and the threshold is chosen with THRESHOLD_N_SPLITS folds.
+TUNE_N_SPLITS = 3
+THRESHOLD_N_SPLITS = 5
+
+# Logistic regression settings of the baseline (train_baseline and
+# make_baseline_pipeline). Not tuned.
+BASELINE_PARAMS = {"class_weight": "balanced", "max_iter": 1000}
+
 
 def train_baseline(X_train, y_train) -> Pipeline:
     """Train a baseline: StandardScaler + LogisticRegression with balanced class weights.
 
+    Expects X_train with the features already computed (used by notebook 02).
     The scaler is inside the pipeline, so it is fitted only on the training data.
     """
     model = Pipeline(
         [
             ("scaler", StandardScaler()),
-            (
-                "classifier",
-                LogisticRegression(class_weight="balanced", max_iter=1000, random_state=SEED),
-            ),
+            ("classifier", LogisticRegression(random_state=SEED, **BASELINE_PARAMS)),
         ]
     )
     model.fit(X_train, y_train)
     return model
+
+
+def make_baseline_pipeline(use_hour: bool = True) -> Pipeline:
+    """Create an (unfitted) baseline pipeline: feature step + StandardScaler + LogisticRegression.
+
+    Same input as make_pipeline (the raw columns) and same features, so the baseline
+    and the Random Forest can be compared on the same split and folds.
+    """
+    return Pipeline(
+        [
+            ("features", make_feature_step(use_hour)),
+            ("scaler", StandardScaler()),
+            ("classifier", LogisticRegression(random_state=SEED, **BASELINE_PARAMS)),
+        ]
+    )
 
 
 def make_rf(**params) -> RandomForestClassifier:
@@ -115,6 +139,26 @@ def oof_proba(model_factory, X, y, split: str, n_splits: int):
     raise ValueError(f"Unknown split: {split!r}. Use 'random' or 'temporal'.")
 
 
+def cv_summary(y_eval, split: str, n_splits: int) -> dict:
+    """Describe the rows behind an out-of-fold score (for the provenance).
+
+    y_eval are the labels of the rows that got an out-of-fold prediction (as
+    returned by oof_proba). With split="temporal" the first block never gets one,
+    so these rows are fewer than the training rows and their fraud rate can differ
+    from the test set's. That is why cv_pr_auc and the test PR-AUC are not
+    directly comparable.
+    """
+    n_rows = int(len(y_eval))
+    n_frauds = int(np.sum(y_eval))
+    return {
+        "scheme": "time_series_split" if split == "temporal" else "stratified_kfold",
+        "n_splits": n_splits,
+        "n_rows": n_rows,
+        "n_frauds": n_frauds,
+        "fraud_rate": n_frauds / n_rows if n_rows else None,
+    }
+
+
 def tune(X, y, n_trials: int, split: str = "random", use_hour: bool = True) -> optuna.Study:
     """Tune the pipeline (feature step + Random Forest) with Optuna to maximize PR-AUC.
 
@@ -127,7 +171,8 @@ def tune(X, y, n_trials: int, split: str = "random", use_hour: bool = True) -> o
     never be used for tuning.
 
     The search space includes class_weight (CLASS_WEIGHTS), so study.best_params
-    always has a "class_weight" key.
+    always has a "class_weight" key. Each trial also stores cv_summary(...) of the
+    scored rows in trial.user_attrs["cv"].
     """
 
     def objective(trial: optuna.Trial) -> float:
@@ -143,8 +188,9 @@ def tune(X, y, n_trials: int, split: str = "random", use_hour: bool = True) -> o
             X,
             y,
             split=split,
-            n_splits=3,
+            n_splits=TUNE_N_SPLITS,
         )
+        trial.set_user_attr("cv", cv_summary(y_eval, split, TUNE_N_SPLITS))
         return average_precision_score(y_eval, proba)
 
     sampler = optuna.samplers.TPESampler(seed=SEED)
@@ -160,7 +206,7 @@ def choose_threshold(
 
     A pipeline is built with make_pipeline(use_hour, **model_params) and X_train
     has the raw columns, so features are computed inside each fold. Probabilities are
-    generated with 5-fold out-of-fold predictions on the training set:
+    generated with THRESHOLD_N_SPLITS-fold out-of-fold predictions on the training set:
     StratifiedKFold for split="random", or a forward-in-time split for
     split="temporal" (X_train must be sorted by Time; only the rows that got
     a prediction are used).
@@ -176,7 +222,7 @@ def choose_threshold(
         X_train,
         y_train,
         split=split,
-        n_splits=5,
+        n_splits=THRESHOLD_N_SPLITS,
     )
     return best_f1_threshold(y_eval, proba)
 
@@ -234,6 +280,8 @@ def main() -> None:
             # Best out-of-fold PR-AUC found by Optuna on the training set
             # (forward-in-time folds for split="temporal").
             "cv_pr_auc": float(study.best_value),
+            # Folds, rows and frauds behind cv_pr_auc (see cv_summary).
+            "cv": study.best_trial.user_attrs["cv"],
             # Chosen by the tuning among CLASS_WEIGHTS (None means no weighting).
             "class_weight": params["class_weight"],
             "seed": SEED,

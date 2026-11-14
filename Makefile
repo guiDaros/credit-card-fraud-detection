@@ -10,6 +10,8 @@
 #   evaluate-random         Evaluate model_random                -> reports/metrics_random.json, pr_curve_random.png
 #   evaluate-temporal       Evaluate model_temporal              -> reports/metrics_temporal.json, pr_curve_temporal.png
 #   evaluate-temporal-nohour  Evaluate model_temporal_nohour     -> reports/metrics_temporal_nohour.json, ...
+#   baseline-temporal       Logistic regression baseline, temporal split -> reports/metrics_baseline_temporal.json
+#   compare-hour            With vs without Hour, temporal CV on train only -> reports/compare_hour.json
 #   test                    Run the tests (pytest -q)
 #   lint                    Check the code style (ruff check .)
 #   notebooks               Execute the notebooks and save their outputs in place
@@ -29,6 +31,7 @@ SPLIT ?= temporal
 .PHONY: setup setup-lock data \
 	train-random train-temporal train-temporal-nohour \
 	evaluate-random evaluate-temporal evaluate-temporal-nohour \
+	baseline-temporal compare-hour \
 	test lint notebooks publish all
 
 setup:
@@ -57,6 +60,12 @@ evaluate-temporal:
 
 evaluate-temporal-nohour:
 	$(PYTHON) -m src.evaluate --split temporal --no-hour
+
+baseline-temporal:
+	$(PYTHON) -m src.baseline
+
+compare-hour:
+	$(PYTHON) -m scripts.compare_hour
 
 test:
 	$(PYTHON) -m pytest -q

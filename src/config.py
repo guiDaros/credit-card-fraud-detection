@@ -46,3 +46,13 @@ def metrics_path(split: str, use_hour: bool) -> Path:
 def pr_curve_path(split: str, use_hour: bool) -> Path:
     """Path of the PR curve plot, e.g. reports/pr_curve_temporal.png."""
     return REPORTS_DIR / f"pr_curve_{run_suffix(split, use_hour)}.png"
+
+
+def baseline_metrics_path() -> Path:
+    """Path of the logistic regression baseline report (temporal split)."""
+    return REPORTS_DIR / "metrics_baseline_temporal.json"
+
+
+def compare_hour_path() -> Path:
+    """Path of the with/without Hour comparison report (scripts/compare_hour.py)."""
+    return REPORTS_DIR / "compare_hour.json"

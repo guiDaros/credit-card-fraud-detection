@@ -13,20 +13,20 @@ exist so that every number it needs is in those files first.
 
 ## 2. Code still missing for the README (no training)
 
-- [ ] **Logistic regression baseline on the temporal split.** Nothing writes it to
+- [x] **Logistic regression baseline on the temporal split.** Nothing writes it to
       `reports/` today (`train_baseline` is only used in notebook 02, on the random
       split). Add a script or make target that fits feature step + StandardScaler +
       LogisticRegression on the temporal training set, picks its threshold with the
       same temporal out-of-fold F1, and writes `reports/metrics_baseline_temporal.json`
       with PR-AUC, precision, recall, F1, both bootstrap intervals and provenance.
-- [ ] **compare_hour.py must save its result.** It only prints. Make it write
+- [x] **compare_hour.py must save its result.** It only prints. Make it write
       `reports/compare_hour.json` (per-fold PR-AUC with and without Hour, mean, std,
       paired difference, parameters used, n_splits, provenance).
-- [ ] **CV details for the cv_pr_auc explanation.** Record in the training
+- [x] **CV details for the cv_pr_auc explanation.** Record in the training
       provenance the number of CV folds, the rows and frauds that got an out-of-fold
       prediction, and their fraud rate, so the README can say from the files why
       `cv_pr_auc` and the test PR-AUC are not directly comparable.
-- [ ] Optional: record the test period (first and last hour of `Time`) in
+- [x] Optional: record the test period (first and last hour of `Time`) in
       `metrics_*.json`, so "the temporal test is a single evening (hours 16-23)" can
       also come from a file (today only `n_blocks` = number of hours would).
 
@@ -36,7 +36,7 @@ exist so that every number it needs is in those files first.
 
       nohup sh -c 'make train-temporal && make evaluate-temporal && make notebooks' > train.log 2>&1 &
 
-- [ ] Run the baseline and `python -m scripts.compare_hour` (step 2 outputs).
+- [ ] Run `make baseline-temporal` and `make compare-hour` (step 2 outputs).
 - [ ] Check that `reports/metrics_temporal.json` has `bootstrap_ci`,
       `block_bootstrap_ci`, `cv_pr_auc` and `training_provenance` (which holds the
       exact scikit-learn version of the pickle), and that the new

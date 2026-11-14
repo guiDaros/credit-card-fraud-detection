@@ -233,13 +233,33 @@ def plot_pr_curve(y_true, proba, path) -> None:
     plt.close(fig)
 
 
+def describe_test_period(time) -> dict:
+    """First and last Time of the test set, in seconds and in hours.
+
+    Time is in seconds since the first transaction of the dataset, so "hour" here
+    is hours since that first transaction and "hour_of_day" is (hour % 24), the
+    same value as the Hour feature.
+    """
+    time = np.asarray(time)
+    first, last = float(time.min()), float(time.max())
+    return {
+        "first_time": first,
+        "last_time": last,
+        "first_hour": int(first // 3600),
+        "last_hour": int(last // 3600),
+        "first_hour_of_day": int(first // 3600 % 24),
+        "last_hour_of_day": int(last // 3600 % 24),
+    }
+
+
 def build_metrics(bundle: dict, y_train, y_test, proba, test_time, provenance: dict) -> dict:
     """Build the metrics report for one run configuration.
 
     Includes the test metrics, two sets of 95% intervals at the chosen threshold
     (bootstrap_ci: rows resampled independently; block_bootstrap_ci: one-hour blocks
     resampled, using test_time, the Time of each test row), the run configuration
-    (split, use_hour, params), row and fraud counts for train and test, and two
+    (split, use_hour, params), row and fraud counts for train and test, the test
+    period (describe_test_period(test_time)), and two
     provenance blocks:
     - provenance: this evaluation run (dataset hash, versions, git commit, git_dirty);
     - training_provenance: copied from the model file (None for models saved before
@@ -255,6 +275,7 @@ def build_metrics(bundle: dict, y_train, y_test, proba, test_time, provenance: d
         "n_test": int(len(y_test)),
         "n_test_frauds": int(np.sum(y_test)),
         "fraud_rate": float(np.mean(y_test)),
+        "test_period": describe_test_period(test_time),
         "pr_auc": float(average_precision_score(y_test, proba)),
         "cv_pr_auc": cv_pr_auc,
         "at_0.5": metrics_at(y_test, proba, 0.5),
