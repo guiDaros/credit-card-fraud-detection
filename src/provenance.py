@@ -36,16 +36,26 @@ def get_git_commit() -> str | None:
         return None
 
 
-def get_git_dirty() -> bool | None:
-    """Return True if the working tree has uncommitted changes, False if it is clean.
+# Folders written by the pipeline itself (data report, metrics, plots). Changes there
+# are outputs, not code, so they do not make the tree dirty: otherwise each step
+# would block the next one (e.g. `make data` rewrites data_report.json, then
+# `make train-*` would refuse to run). Data and models are already in .gitignore.
+GENERATED_DIRS = ("reports",)
 
-    Uses `git status --porcelain` (ignored files such as data and models do not
-    count). Returns None if git is not available or this is not a git repository.
+
+def get_git_dirty(repo_dir: Path | None = None) -> bool | None:
+    """Return True if code or configuration has uncommitted changes, False if not.
+
+    Uses `git status --porcelain` on the whole repository, excluding GENERATED_DIRS
+    (ignored files such as data and models do not count either). Untracked files
+    count as changes. repo_dir is any folder inside the repository (default: this
+    project). Returns None if git is not available or this is not a git repository.
     """
+    exclude = [f":(top,exclude){folder}" for folder in GENERATED_DIRS]
     try:
         result = subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=Path(__file__).resolve().parent,
+            ["git", "status", "--porcelain", "--", ":(top)", *exclude],
+            cwd=repo_dir or Path(__file__).resolve().parent,
             capture_output=True,
             text=True,
             check=True,
@@ -56,16 +66,19 @@ def get_git_dirty() -> bool | None:
 
 
 def ensure_clean_tree(allow_dirty: bool) -> None:
-    """Raise RuntimeError if the working tree has uncommitted changes.
+    """Raise RuntimeError if code or configuration has uncommitted changes.
 
     Reports must come from committed code, so that the recorded git commit is the
-    code that produced them. allow_dirty=True skips the check (git_dirty is still
+    code that produced them. Changes in GENERATED_DIRS (the reports themselves) are
+    allowed, so the pipeline steps can run one after another and the reports can be
+    committed at the end. allow_dirty=True skips the check (git_dirty is still
     recorded as True in the provenance).
     """
     if get_git_dirty() and not allow_dirty:
         raise RuntimeError(
-            "The git working tree has uncommitted changes, so the recorded commit would "
-            "not match the code. Commit your changes first, or pass --allow-dirty."
+            "The git working tree has uncommitted changes outside reports/, so the "
+            "recorded commit would not match the code. Commit your changes first, or "
+            "pass --allow-dirty."
         )
 
 

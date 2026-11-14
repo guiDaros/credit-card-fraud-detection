@@ -98,3 +98,52 @@ def test_ensure_clean_tree(monkeypatch, dirty, allow_dirty, raises):
             provenance.ensure_clean_tree(allow_dirty)
     else:
         provenance.ensure_clean_tree(allow_dirty)
+
+
+def git(repo, *args):
+    """Run a git command in `repo` with a throwaway identity."""
+    subprocess.run(
+        ["git", "-c", "user.name=test", "-c", "user.email=test@example.com", *args],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+
+
+@pytest.fixture
+def repo(tmp_path):
+    """Tiny committed git repository with code and a report."""
+    git(tmp_path, "init", "-q")
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "train.py").write_text("x = 1\n")
+    (tmp_path / "reports").mkdir()
+    (tmp_path / "reports" / "data_report.json").write_text("{}\n")
+    git(tmp_path, "add", ".")
+    git(tmp_path, "commit", "-q", "-m", "init")
+    return tmp_path
+
+
+def test_clean_repo_is_not_dirty(repo):
+    assert provenance.get_git_dirty(repo) is False
+    assert provenance.get_git_dirty(repo / "src") is False  # any folder inside works
+
+
+def test_changes_in_reports_do_not_count(repo):
+    (repo / "reports" / "data_report.json").write_text('{"changed": true}\n')
+    (repo / "reports" / "metrics_temporal.json").write_text("{}\n")  # new, untracked
+    assert provenance.get_git_dirty(repo) is False
+    assert provenance.get_git_dirty(repo / "src") is False
+
+
+@pytest.mark.parametrize("change", ["modify", "untracked"])
+def test_code_changes_count(repo, change):
+    if change == "modify":
+        (repo / "src" / "train.py").write_text("x = 2\n")
+    else:
+        (repo / "Makefile").write_text("all:\n")
+    assert provenance.get_git_dirty(repo) is True
+    assert provenance.get_git_dirty(repo / "src") is True
+
+
+def test_outside_a_repository_is_none(tmp_path):
+    assert provenance.get_git_dirty(tmp_path) is None
