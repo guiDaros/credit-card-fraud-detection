@@ -1,7 +1,8 @@
 # Credit card fraud detection - common commands.
 #
 # Targets:
-#   setup                   Install the dependencies (pip install -r requirements.txt)
+#   setup                   Install the dependencies (requirements.txt + requirements-dev.txt)
+#   setup-lock              Install the exact versions used for the results (requirements-lock.txt)
 #   data                    Raw CSV -> data/processed/transactions.parquet + reports/data_report.json
 #   train-random            Train with the random split          -> models/model_random.joblib
 #   train-temporal          Train with the temporal split        -> models/model_temporal.joblib
@@ -11,22 +12,30 @@
 #   evaluate-temporal-nohour  Evaluate model_temporal_nohour     -> reports/metrics_temporal_nohour.json, ...
 #   test                    Run the tests (pytest -q)
 #   lint                    Check the code style (ruff check .)
+#   notebooks               Execute the notebooks and save their outputs in place
+#   publish                 Upload one configuration to the Hugging Face Hub (needs REPO=...)
 #   all                     data, then the three trains, then the three evaluates (run without -j)
 #
 # Variables (override on the command line, e.g. `make train-temporal TRIALS=5`):
 #   PYTHON   Python interpreter (default: .venv/bin/python if it exists, else python3)
 #   TRIALS   Number of Optuna trials for training (default: 20)
+#   REPO     Hugging Face repository id for `publish`, e.g. your-username/credit-card-fraud-rf
+#   SPLIT    Configuration to publish: random or temporal (default: temporal)
 
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 TRIALS ?= 20
+SPLIT ?= temporal
 
-.PHONY: setup data \
+.PHONY: setup setup-lock data \
 	train-random train-temporal train-temporal-nohour \
 	evaluate-random evaluate-temporal evaluate-temporal-nohour \
-	test lint all
+	test lint notebooks publish all
 
 setup:
-	$(PYTHON) -m pip install -r requirements.txt
+	$(PYTHON) -m pip install -r requirements.txt -r requirements-dev.txt
+
+setup-lock:
+	$(PYTHON) -m pip install -r requirements-lock.txt -r requirements-dev.txt
 
 data:
 	$(PYTHON) -m src.make_dataset
@@ -54,6 +63,14 @@ test:
 
 lint:
 	$(PYTHON) -m ruff check .
+
+# nbconvert runs each notebook from its own folder, as the notebooks expect.
+notebooks:
+	$(PYTHON) -m jupyter nbconvert --to notebook --execute --inplace notebooks/*.ipynb
+
+publish:
+	@test -n "$(REPO)" || (echo "Usage: make publish REPO=your-username/repo-name [SPLIT=temporal]"; exit 1)
+	$(PYTHON) -m src.publish --repo $(REPO) --split $(SPLIT)
 
 all: data \
 	train-random train-temporal train-temporal-nohour \
