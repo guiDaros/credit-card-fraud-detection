@@ -40,13 +40,13 @@ def load_processed(path: Path = PROCESSED_PATH) -> pd.DataFrame:
     return validate_raw(df)
 
 
-def split_data(df: pd.DataFrame, method: str = "random"):
+def split_data(df: pd.DataFrame, method: str = "temporal"):
     """Split features and target into train and test sets.
 
-    method="random": stratified random split (SEED, TEST_SIZE).
-    method="temporal": no shuffling and no stratification. The cut is the
+    method="temporal" (default, same as the CLI): no shuffling and no stratification. The cut is the
     (1 - TEST_SIZE) quantile of Time; train is Time <= cut and test is
     Time > cut, so rows with the same Time never end up on both sides.
+    method="random": stratified random split (SEED, TEST_SIZE).
 
     Returns X_train, X_test, y_train, y_test.
     """

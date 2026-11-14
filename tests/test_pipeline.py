@@ -103,8 +103,16 @@ def test_split_warns_when_few_test_frauds(synthetic_df, caplog):
     df = synthetic_df.copy()
     df[TARGET] = [1] * 10 + [0] * (len(df) - 10)
     with caplog.at_level("WARNING"):
-        split_data(df)
+        split_data(df, method="random")
     assert "frauds" in caplog.text
+
+
+def test_split_data_default_is_temporal(synthetic_df):
+    default = split_data(synthetic_df)
+    temporal = split_data(synthetic_df, method="temporal")
+
+    for a, b in zip(default, temporal):
+        assert a.index.equals(b.index)
 
 
 def test_split_data_rejects_unknown_method(synthetic_df):

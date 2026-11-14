@@ -11,8 +11,6 @@ from src.config import DATA_PATH, DATA_REPORT_PATH, PROCESSED_PATH, REPORTS_DIR,
 from src.data import load_data
 from src.provenance import get_provenance
 
-REPORT_PATH = DATA_REPORT_PATH
-
 
 def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     """Drop duplicate rows (keep first) and sort by Time with a stable sort.
@@ -37,6 +35,7 @@ def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
 
 
 def main():
+    """Clean the raw CSV and save the processed parquet and the data report."""
     df = load_data()
     clean, report = clean_dataset(df)
     report["provenance"] = get_provenance(DATA_PATH)
@@ -45,11 +44,11 @@ def main():
     clean.to_parquet(PROCESSED_PATH, index=False)
 
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    with open(REPORT_PATH, "w") as f:
+    with open(DATA_REPORT_PATH, "w") as f:
         json.dump(report, f, indent=2)
 
     print(f"Saved {PROCESSED_PATH}")
-    print(f"Saved {REPORT_PATH}")
+    print(f"Saved {DATA_REPORT_PATH}")
     print(json.dumps(report, indent=2))
 
 

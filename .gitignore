@@ -7,13 +7,18 @@ env/
 __pycache__/
 *.py[cod]
 
+# Tool caches
+.ruff_cache/
+
 # Jupyter
 .ipynb_checkpoints/
 
+# Secrets and credentials
+.env
+kaggle.json
+
 # Data and models (large files)
 data/raw/*.csv
-models/*.joblib
-data/processed/*.parquet
-
-# Keep the data report under version control
-!reports/data_report.json
+data/processed/*
+models/*
+!models/.gitkeep
