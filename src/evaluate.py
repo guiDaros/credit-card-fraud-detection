@@ -1,9 +1,13 @@
 """Evaluation helpers based on precision and recall (no accuracy).
 
-Evaluate the saved model on the test set with:
-    python -m src.evaluate
+Evaluate a saved model on the test set with:
+    python -m src.evaluate [--split {random,temporal}] [--no-hour]
+
+Reads models/model_<split>[_nohour].joblib and writes
+reports/metrics_<split>[_nohour].json and reports/pr_curve_<split>[_nohour].png.
 """
 
+import argparse
 import json
 from pathlib import Path
 
@@ -20,7 +24,13 @@ from sklearn.metrics import (
     recall_score,
 )
 
-from src.config import MODELS_DIR, REPORTS_DIR
+from src.config import (
+    DATA_REPORT_PATH,
+    add_run_args,
+    metrics_path,
+    model_path,
+    pr_curve_path,
+)
 
 
 def best_f1_threshold(y_true, proba) -> float:
@@ -87,38 +97,61 @@ def plot_pr_curve(y_true, proba, path) -> None:
     plt.close(fig)
 
 
+def build_metrics(bundle: dict, y_train, y_test, proba, provenance: dict) -> dict:
+    """Build the metrics report for one run configuration.
+
+    Includes the test metrics, the run configuration (split, use_hour, params),
+    row and fraud counts for train and test, and the provenance info.
+    """
+    return {
+        "split": bundle["split"],
+        "use_hour": bundle["use_hour"],
+        "n_train": int(len(y_train)),
+        "n_train_frauds": int(np.sum(y_train)),
+        "n_test": int(len(y_test)),
+        "n_test_frauds": int(np.sum(y_test)),
+        "fraud_rate": float(np.mean(y_test)),
+        "pr_auc": float(average_precision_score(y_test, proba)),
+        "at_0.5": metrics_at(y_test, proba, 0.5),
+        "at_chosen_threshold": metrics_at(y_test, proba, bundle["threshold"]),
+        "params": bundle["params"],
+        "provenance": provenance,
+    }
+
+
 def main() -> None:
     """Evaluate the saved model on the test set and save the reports."""
     # Imported here to keep the helper functions above free of data dependencies.
     from src.data import load_processed, split_data
+    from src.provenance import get_run_provenance
 
-    bundle = joblib.load(MODELS_DIR / "model.joblib")
-    pipeline = bundle["pipeline"]
-    threshold = bundle["threshold"]
+    parser = argparse.ArgumentParser(description="Evaluate a saved model on the test set.")
+    add_run_args(parser)
+    args = parser.parse_args()
+    use_hour = not args.no_hour
+
+    bundle = joblib.load(model_path(args.split, use_hour))
+    if bundle["split"] != args.split or bundle["use_hour"] != use_hour:
+        raise ValueError(
+            f"Model file says split={bundle['split']!r}, use_hour={bundle['use_hour']}, "
+            f"but evaluate was called with split={args.split!r}, use_hour={use_hour}."
+        )
 
     # Use the same split as in training. The pipeline computes the features
     # from the raw columns. Final evaluation: the only place the test set is used.
-    _, X_test, _, y_test = split_data(load_processed(), method=bundle["split"])
-    X_test = X_test[bundle["input_columns"]]
+    _, X_test, y_train, y_test = split_data(load_processed(), method=args.split)
+    proba = bundle["pipeline"].predict_proba(X_test[bundle["input_columns"]])[:, 1]
 
-    proba = pipeline.predict_proba(X_test)[:, 1]
+    metrics = build_metrics(bundle, y_train, y_test, proba, get_run_provenance(DATA_REPORT_PATH))
 
-    metrics = {
-        "pr_auc": float(average_precision_score(y_test, proba)),
-        "fraud_rate": float(np.mean(y_test)),
-        "n_test": int(len(y_test)),
-        "at_0.5": metrics_at(y_test, proba, 0.5),
-        "at_chosen_threshold": metrics_at(y_test, proba, threshold),
-        "params": bundle["params"],
-    }
-
-    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    metrics_path = REPORTS_DIR / "metrics.json"
-    metrics_path.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
-    plot_pr_curve(y_test, proba, REPORTS_DIR / "pr_curve.png")
+    out_metrics = metrics_path(args.split, use_hour)
+    out_curve = pr_curve_path(args.split, use_hour)
+    out_metrics.parent.mkdir(parents=True, exist_ok=True)
+    out_metrics.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+    plot_pr_curve(y_test, proba, out_curve)
 
     print(json.dumps(metrics, indent=2))
-    print(f"Saved {metrics_path} and {REPORTS_DIR / 'pr_curve.png'}")
+    print(f"Saved {out_metrics} and {out_curve}")
 
 
 if __name__ == "__main__":

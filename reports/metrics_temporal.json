@@ -1,0 +1,46 @@
+{
+  "split": "temporal",
+  "use_hour": true,
+  "n_train": 226982,
+  "n_train_frauds": 399,
+  "n_test": 56744,
+  "n_test_frauds": 74,
+  "fraud_rate": 0.0013041026364020865,
+  "pr_auc": 0.8169441146436645,
+  "at_0.5": {
+    "threshold": 0.5,
+    "precision": 0.9285714285714286,
+    "recall": 0.7027027027027027,
+    "f1": 0.8,
+    "tp": 52,
+    "fp": 4,
+    "fn": 22,
+    "tn": 56666
+  },
+  "at_chosen_threshold": {
+    "threshold": 0.35939071349125934,
+    "precision": 0.8769230769230769,
+    "recall": 0.7702702702702703,
+    "f1": 0.8201438848920863,
+    "tp": 57,
+    "fp": 8,
+    "fn": 17,
+    "tn": 56662
+  },
+  "params": {
+    "n_estimators": 122,
+    "max_depth": 17,
+    "min_samples_leaf": 6,
+    "max_features": "log2",
+    "class_weight": "balanced_subsample"
+  },
+  "provenance": {
+    "dataset_sha256": "76274b691b16a6c49d3f159c883398e03ccd6d1ee12d9d8ee38f4b4b98551a89",
+    "python": "3.12.3",
+    "pandas": "3.1.1",
+    "numpy": "2.5.4",
+    "scikit-learn": "1.9.1",
+    "optuna": "5.0.0",
+    "git_commit": "44616f0f6c96818cdb9f486ac628198c340f7e8b"
+  }
+}

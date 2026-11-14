@@ -7,11 +7,11 @@ import json
 
 import pandas as pd
 
-from src.config import DATA_PATH, PROCESSED_PATH, REPORTS_DIR, TARGET
+from src.config import DATA_PATH, DATA_REPORT_PATH, PROCESSED_PATH, REPORTS_DIR, TARGET
 from src.data import load_data
 from src.provenance import get_provenance
 
-REPORT_PATH = REPORTS_DIR / "data_report.json"
+REPORT_PATH = DATA_REPORT_PATH
 
 
 def clean_dataset(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:

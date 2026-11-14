@@ -8,11 +8,11 @@
   "fraud_rate_after": 0.001667101358352777,
   "provenance": {
     "raw_sha256": "76274b691b16a6c49d3f159c883398e03ccd6d1ee12d9d8ee38f4b4b98551a89",
-    "python": "3.13.7",
-    "pandas": "2.3.2",
-    "numpy": "2.3.2",
+    "python": "3.12.3",
+    "pandas": "3.1.1",
+    "numpy": "2.5.4",
     "scikit-learn": "1.9.1",
     "optuna": "5.0.0",
-    "git_commit": "4682f8c983f019510c167474e3ac88520505c026"
+    "git_commit": "44616f0f6c96818cdb9f486ac628198c340f7e8b"
   }
 }

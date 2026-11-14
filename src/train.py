@@ -1,7 +1,9 @@
 """Model training functions.
 
 Run the full training pipeline with:
-    python -m src.train --trials 20
+    python -m src.train --trials 20 [--split {random,temporal}] [--no-hour]
+
+The model is saved as models/model_<split>[_nohour].joblib.
 """
 
 import argparse
@@ -15,7 +17,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer, StandardScaler
 
-from src.config import MODELS_DIR, SEED
+from src.config import SEED, add_run_args, model_path
 from src.cv import temporal_oof_proba
 from src.data import load_processed, split_data
 from src.evaluate import best_f1_threshold
@@ -62,9 +64,6 @@ def make_pipeline(use_hour: bool = True, **rf_params) -> Pipeline:
             ("classifier", make_rf(**rf_params)),
         ]
     )
-
-
-SPLITS = ("random", "temporal")
 
 
 def check_time_order(X) -> None:
@@ -170,17 +169,13 @@ def main() -> None:
     """Tune, choose the threshold, train the final pipeline and save it."""
     parser = argparse.ArgumentParser(description="Train the fraud detection Random Forest.")
     parser.add_argument("--trials", type=int, default=20, help="Number of Optuna trials.")
-    parser.add_argument(
-        "--split", choices=SPLITS, default="random", help="Train/test split and CV scheme."
-    )
-    parser.add_argument(
-        "--no-hour", action="store_true", help="Do not create the Hour feature."
-    )
+    add_run_args(parser)
     args = parser.parse_args()
     use_hour = not args.no_hour
 
     # X_train keeps the raw columns; the pipeline computes the features itself.
     # The test set is not used anywhere in this script.
+    # Reads data/processed (the deduplicated dataset made by make_dataset).
     X_train, X_test, y_train, y_test = split_data(load_processed(), method=args.split)
     if args.split == "temporal":
         # Temporal CV needs rows in Time order (checked by check_time_order).
@@ -200,8 +195,8 @@ def main() -> None:
     pipeline = make_pipeline(use_hour=use_hour, **params)
     pipeline.fit(X_train, y_train)
 
-    MODELS_DIR.mkdir(parents=True, exist_ok=True)
-    model_path = MODELS_DIR / "model.joblib"
+    path = model_path(args.split, use_hour)
+    path.parent.mkdir(parents=True, exist_ok=True)
     bundle = {
         "pipeline": pipeline,
         "threshold": threshold,
@@ -210,10 +205,10 @@ def main() -> None:
         "split": args.split,
         "params": {**params, "class_weight": "balanced_subsample"},
     }
-    joblib.dump(bundle, model_path, compress=3)
+    joblib.dump(bundle, path, compress=3)
 
-    size_mb = model_path.stat().st_size / (1024 * 1024)
-    print(f"Saved {model_path} ({size_mb:.1f} MB)")
+    size_mb = path.stat().st_size / (1024 * 1024)
+    print(f"Saved {path} ({size_mb:.1f} MB)")
 
 
 if __name__ == "__main__":
