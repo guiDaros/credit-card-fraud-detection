@@ -13,6 +13,7 @@
     "numpy": "2.5.4",
     "scikit-learn": "1.9.1",
     "optuna": "5.0.0",
-    "git_commit": "44616f0f6c96818cdb9f486ac628198c340f7e8b"
+    "git_commit": "6f19d38a20b3d4e25d85ac4ad2b51d078fdda971",
+    "git_dirty": true
   }
 }
