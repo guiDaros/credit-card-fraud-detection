@@ -10,10 +10,10 @@ import argparse
 
 import joblib
 import optuna
-from sklearn.metrics import average_precision_score
-from sklearn.model_selection import StratifiedKFold, cross_val_predict
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import average_precision_score
+from sklearn.model_selection import StratifiedKFold, cross_val_predict
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer, StandardScaler
 

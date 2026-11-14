@@ -17,6 +17,8 @@ metrics:
 
 # Credit Card Fraud Detection
 
+[![CI](https://github.com/guiDaros/credit-card-fraud-detection/actions/workflows/ci.yml/badge.svg)](https://github.com/guiDaros/credit-card-fraud-detection/actions/workflows/ci.yml)
+
 ## Summary
 
 Personal machine learning project focused on financial fraud detection. A Random Forest
