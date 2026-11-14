@@ -1,0 +1,125 @@
+{
+  "split": "temporal",
+  "use_hour": false,
+  "n_train": 226982,
+  "n_train_frauds": 399,
+  "n_test": 56744,
+  "n_test_frauds": 74,
+  "fraud_rate": 0.0013041026364020865,
+  "test_period": {
+    "first_time": 145235.0,
+    "last_time": 172792.0,
+    "first_hour": 40,
+    "last_hour": 47,
+    "first_hour_of_day": 16,
+    "last_hour_of_day": 23
+  },
+  "pr_auc": 0.8160725823911377,
+  "cv_pr_auc": 0.7803016644957643,
+  "at_0.5": {
+    "threshold": 0.5,
+    "precision": 0.8636363636363636,
+    "recall": 0.7702702702702703,
+    "f1": 0.8142857142857143,
+    "tp": 57,
+    "fp": 9,
+    "fn": 17,
+    "tn": 56661
+  },
+  "at_chosen_threshold": {
+    "threshold": 0.45385208157830426,
+    "precision": 0.8636363636363636,
+    "recall": 0.7702702702702703,
+    "f1": 0.8142857142857143,
+    "tp": 57,
+    "fp": 9,
+    "fn": 17,
+    "tn": 56661
+  },
+  "bootstrap_ci": {
+    "n_boot": 1000,
+    "n_used": 1000,
+    "seed": 42,
+    "level": 0.95,
+    "pr_auc": [
+      0.7349782345992666,
+      0.8990001387895268
+    ],
+    "precision": [
+      0.7758317144244778,
+      0.9444940476190475
+    ],
+    "recall": [
+      0.671875,
+      0.8696118012422359
+    ],
+    "f1": [
+      0.7419301431318095,
+      0.8833653846153846
+    ]
+  },
+  "block_bootstrap_ci": {
+    "n_boot": 1000,
+    "n_used": 1000,
+    "seed": 42,
+    "level": 0.95,
+    "pr_auc": [
+      0.6872705581946608,
+      0.8952187677226131
+    ],
+    "precision": [
+      0.6537878787878788,
+      0.9900510204081631
+    ],
+    "recall": [
+      0.6785189075630252,
+      0.8333333333333334
+    ],
+    "f1": [
+      0.6666666666666666,
+      0.8977330705009277
+    ],
+    "block_seconds": 3600,
+    "n_blocks": 8
+  },
+  "params": {
+    "n_estimators": 350,
+    "max_depth": 22,
+    "min_samples_leaf": 6,
+    "max_features": "sqrt",
+    "class_weight": "balanced"
+  },
+  "provenance": {
+    "dataset_sha256": "76274b691b16a6c49d3f159c883398e03ccd6d1ee12d9d8ee38f4b4b98551a89",
+    "python": "3.13.7",
+    "pandas": "3.1.1",
+    "numpy": "2.5.4",
+    "scikit-learn": "1.9.1",
+    "optuna": "5.0.0",
+    "git_commit": "650311c70f5921d2a34b200b6647639b841be637",
+    "git_dirty": false
+  },
+  "training_provenance": {
+    "n_trials": 20,
+    "cv_pr_auc": 0.7803016644957643,
+    "cv": {
+      "scheme": "time_series_split",
+      "n_splits": 3,
+      "n_rows": 170235,
+      "n_frauds": 242,
+      "fraud_rate": 0.0014215643081622463
+    },
+    "class_weight": "balanced",
+    "seed": 42,
+    "split": "temporal",
+    "use_hour": false,
+    "dataset_sha256": "76274b691b16a6c49d3f159c883398e03ccd6d1ee12d9d8ee38f4b4b98551a89",
+    "python": "3.13.7",
+    "pandas": "3.1.1",
+    "numpy": "2.5.4",
+    "scikit-learn": "1.9.1",
+    "optuna": "5.0.0",
+    "git_commit": "650311c70f5921d2a34b200b6647639b841be637",
+    "git_dirty": false
+  }
+}

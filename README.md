@@ -31,7 +31,7 @@ into a fraud / not-fraud flag.
 
 The main evaluation uses a **temporal split**: the model is trained on the past and tested
 on the most recent 20% of the transactions. On that test set it reaches a PR-AUC of
-**0.817** (95% bootstrap interval 0.736-0.901), detecting 57 of 74 frauds with 8 false
+**0.809** (95% bootstrap interval 0.729-0.892), detecting 57 of 74 frauds with 16 false
 alarms among 56,670 legitimate transactions. The test set is small in frauds, so these
 numbers are uncertain.
 
@@ -111,22 +111,27 @@ chosen by cross-validation.
 
 | Configuration | PR-AUC [95% CI] | Precision [95% CI] | Recall [95% CI] | F1 [95% CI] | Test frauds | Fraud rate train / test |
 |---|---|---|---|---|---|---|
-| random | *missing: not run yet* | — | — | — | — | — |
-| **temporal** | **0.817** [0.736, 0.901] | 0.877 [0.792, 0.953] | 0.770 [0.672, 0.870] | 0.820 [0.748, 0.890] | 74 | 0.176% / 0.130% |
-| temporal, no `Hour` | *missing: not run yet* | — | — | — | — | — |
+| random | 0.803 [0.722, 0.881] | 0.959 [0.913, 1.000] | 0.747 [0.660, 0.828] | 0.840 [0.777, 0.895] | 95 | 0.167% / 0.167% |
+| **temporal** | **0.809** [0.729, 0.892] | 0.781 [0.687, 0.875] | 0.770 [0.672, 0.870] | 0.776 [0.702, 0.848] | 74 | 0.176% / 0.130% |
+| temporal, no `Hour` | 0.816 [0.735, 0.899] | 0.864 [0.776, 0.944] | 0.770 [0.672, 0.870] | 0.814 [0.742, 0.883] | 74 | 0.176% / 0.130% |
 
-The `random` and `temporal, no Hour` configurations still need to be run
-(`make train-random evaluate-random` and
-`make train-temporal-nohour evaluate-temporal-nohour`). Until then it is **not known**
-whether the random split overestimates performance, or whether `Hour` helps.
+What the comparison shows (notebook 03):
+
+- **Random vs temporal:** the PR-AUC intervals overlap, so this run does not show the
+  random split overestimating performance. The two are evaluated on different test sets,
+  so this is only a rough comparison.
+- **Effect of `Hour`** (same test rows, paired bootstrap of temporal minus no-`Hour`):
+  PR-AUC difference -0.007 [-0.019, +0.004], within the noise; F1 difference -0.039
+  [-0.070, -0.013], so the model without `Hour` is slightly better at its chosen
+  threshold. `Hour` does not help on this data.
 
 Details of the temporal model (`reports/metrics_temporal.json`):
 
 - **Train:** 226,982 transactions, 399 frauds. **Test:** 56,744 transactions, 74 frauds.
-- **Threshold:** 0.3594. At this threshold: 57 frauds caught, 17 missed, 8 false alarms,
-  56,662 correct "legitimate".
-- **Parameters:** `n_estimators=122`, `max_depth=17`, `min_samples_leaf=6`,
-  `max_features="log2"`, `class_weight="balanced_subsample"`.
+- **Threshold:** 0.5222. At this threshold: 57 frauds caught, 17 missed, 16 false alarms,
+  56,654 correct "legitimate".
+- **Parameters:** `n_estimators=121`, `max_depth=21`, `min_samples_leaf=9`,
+  `max_features="sqrt"`, `class_weight="balanced"`.
 - The fraud rate is lower in the test period (0.130%) than in training (0.176%).
 
 ![Precision-Recall curve, temporal model](reports/pr_curve_temporal.png)
@@ -138,18 +143,18 @@ transactions.
 
 | Threshold | Precision | Recall | Frauds caught | False alarms | False alarms per 10k |
 |---|---|---|---|---|---|
-| 0.1 | 0.517 | 0.811 | 60 / 74 | 56 | 9.87 |
-| 0.2 | 0.756 | 0.797 | 59 / 74 | 19 | 3.35 |
-| 0.3 | 0.841 | 0.784 | 58 / 74 | 11 | 1.94 |
-| 0.4 | 0.875 | 0.757 | 56 / 74 | 8 | 1.41 |
-| 0.5 | 0.929 | 0.703 | 52 / 74 | 4 | 0.70 |
-| 0.6 | 0.981 | 0.689 | 51 / 74 | 1 | 0.18 |
-| 0.7 | 0.979 | 0.622 | 46 / 74 | 1 | 0.18 |
-| 0.8 | 1.000 | 0.554 | 41 / 74 | 0 | 0.00 |
-| 0.9 | 1.000 | 0.459 | 34 / 74 | 0 | 0.00 |
+| 0.1 | 0.208 | 0.878 | 65 / 74 | 248 | 43.71 |
+| 0.2 | 0.432 | 0.811 | 60 / 74 | 79 | 13.92 |
+| 0.3 | 0.634 | 0.797 | 59 / 74 | 34 | 5.99 |
+| 0.4 | 0.699 | 0.784 | 58 / 74 | 25 | 4.41 |
+| 0.5 | 0.770 | 0.770 | 57 / 74 | 17 | 3.00 |
+| 0.6 | 0.862 | 0.757 | 56 / 74 | 9 | 1.59 |
+| 0.7 | 0.911 | 0.689 | 51 / 74 | 5 | 0.88 |
+| 0.8 | 0.961 | 0.662 | 49 / 74 | 2 | 0.35 |
+| 0.9 | 1.000 | 0.568 | 42 / 74 | 0 | 0.00 |
 
 This table is descriptive only: it is computed on the test set, so it was not used to
-choose the threshold (0.3594, chosen on the training data). Neighbouring rows often differ
+choose the threshold (0.5222, chosen on the training data). Neighbouring rows often differ
 by only 1-5 frauds, which is within the uncertainty shown above.
 
 ## How to run
@@ -177,6 +182,10 @@ make evaluate-temporal          # -> reports/metrics_temporal.json, reports/pr_c
 
 Variables: `TRIALS` (Optuna trials, default 20), e.g. `make train-temporal TRIALS=5`, and
 `PYTHON` (default `.venv/bin/python` if it exists).
+
+On Windows the virtual environment's interpreter is `.venv/Scripts/python.exe`, so pass it
+explicitly, e.g. `make all PYTHON=.venv/Scripts/python.exe`. Without `make`, run the
+commands from the `Makefile` directly, e.g. `python -m src.train --trials 20 --split temporal`.
 
 Each metrics file records the split, `use_hour`, train/test row and fraud counts, the
 dataset sha256, the library versions and the git commit. After the three configurations
@@ -277,8 +286,9 @@ The bundle stores `pipeline`, `threshold`, `input_columns`, `use_hour`, `split` 
 - **Anonymized features:** `V1`-`V28` are PCA components, so the model cannot be
   explained in terms of real transaction attributes, and it can only be applied to data
   transformed in the same way.
-- **Incomplete comparison:** the random-split and no-`Hour` configurations have not been
-  run yet (see [Results](#results)).
+- **Single run per configuration:** each configuration was trained once (fixed seed, 20
+  Optuna trials). Differences between configurations are small compared with the
+  intervals, and another seed or more trials could change the ranking.
 - **No calibration and no fairness analysis:** the scores are not calibrated and should
   not be read as true fraud probabilities. No fairness or bias analysis was done.
 - **Not for production use:** this is a personal learning project. Do not use it to make

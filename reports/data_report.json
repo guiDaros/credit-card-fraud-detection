@@ -6,14 +6,17 @@
   "frauds_after": 473,
   "fraud_rate_before": 0.001727485630620034,
   "fraud_rate_after": 0.001667101358352777,
+  "time_min": 0.0,
+  "time_max": 172792.0,
+  "duration_hours": 47.99777777777778,
   "provenance": {
     "raw_sha256": "76274b691b16a6c49d3f159c883398e03ccd6d1ee12d9d8ee38f4b4b98551a89",
-    "python": "3.12.3",
+    "python": "3.13.7",
     "pandas": "3.1.1",
     "numpy": "2.5.4",
     "scikit-learn": "1.9.1",
     "optuna": "5.0.0",
-    "git_commit": "df3e1b48cd417cb1303e25e19052bb82530591de",
+    "git_commit": "650311c70f5921d2a34b200b6647639b841be637",
     "git_dirty": false
   }
 }
