@@ -29,14 +29,31 @@ def load_data(path: Path = DATA_PATH) -> pd.DataFrame:
 
 
 def load_processed(path: Path = PROCESSED_PATH) -> pd.DataFrame:
-    """Load the processed (deduplicated) dataset and validate it."""
+    """Load the processed (deduplicated, sorted) dataset and validate it.
+
+    Besides the pandera schema, checks the promises of make_dataset: Time is in
+    non-decreasing order and there are no exact duplicate rows. Raises ValueError
+    otherwise (the file is outdated or was changed by hand).
+    """
     if not path.exists():
         raise FileNotFoundError(
             f"Processed dataset not found at {path}. Run 'python -m src.make_dataset' first."
         )
 
-    df = pd.read_parquet(path)
-    return validate_raw(df)
+    df = validate_raw(pd.read_parquet(path))
+
+    problems = []
+    if not df["Time"].is_monotonic_increasing:  # pandas: True also allows equal values
+        problems.append("Time is not in non-decreasing order")
+    n_duplicates = int(df.duplicated().sum())
+    if n_duplicates:
+        problems.append(f"it has {n_duplicates} duplicate row(s)")
+    if problems:
+        raise ValueError(
+            f"Processed dataset {path} is not valid: {'; '.join(problems)}. "
+            "Rebuild it from data/raw with `make data`."
+        )
+    return df
 
 
 def split_data(df: pd.DataFrame, method: str = "temporal"):

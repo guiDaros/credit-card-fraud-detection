@@ -10,6 +10,11 @@ MODELS_DIR = ROOT_DIR / "models"
 REPORTS_DIR = ROOT_DIR / "reports"
 DATA_REPORT_PATH = REPORTS_DIR / "data_report.json"
 
+# sha256 of the Kaggle creditcard.csv the results were produced with (the
+# provenance.raw_sha256 of reports/data_report.json). make_dataset refuses a
+# different file unless --skip-hash-check is passed.
+RAW_SHA256 = "76274b691b16a6c49d3f159c883398e03ccd6d1ee12d9d8ee38f4b4b98551a89"
+
 # Constants
 SEED = 42
 TARGET = "Class"
