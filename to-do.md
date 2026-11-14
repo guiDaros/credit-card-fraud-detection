@@ -8,7 +8,7 @@ exist so that every number it needs is in those files first.
 
 ## 1. Data report (no training, a few seconds)
 
-- [ ] `make data`, then commit `reports/data_report.json` (provenance with
+- [x] `make data`, then commit `reports/data_report.json` (provenance with
       `git_dirty: false`; the data itself does not change).
 
 ## 2. Code still missing for the README (no training)
