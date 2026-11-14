@@ -23,10 +23,13 @@
 #   TRIALS   Number of Optuna trials for training (default: 20)
 #   REPO     Hugging Face repository id for `publish`, e.g. your-username/credit-card-fraud-rf
 #   SPLIT    Configuration to publish: random or temporal (default: temporal)
+#   PRIVATE  Set PRIVATE=1 to create the Hub repository as private on `publish`
+#            (default: empty = public; only applies when the repository is created)
 
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 TRIALS ?= 20
 SPLIT ?= temporal
+PRIVATE ?=
 
 .PHONY: setup setup-lock data \
 	train-random train-temporal train-temporal-nohour \
@@ -78,8 +81,8 @@ notebooks:
 	$(PYTHON) -m jupyter nbconvert --to notebook --execute --inplace notebooks/*.ipynb
 
 publish:
-	@test -n "$(REPO)" || (echo "Usage: make publish REPO=your-username/repo-name [SPLIT=temporal]"; exit 1)
-	$(PYTHON) -m src.publish --repo $(REPO) --split $(SPLIT)
+	@test -n "$(REPO)" || (echo "Usage: make publish REPO=your-username/repo-name [SPLIT=temporal] [PRIVATE=1]"; exit 1)
+	$(PYTHON) -m src.publish --repo $(REPO) --split $(SPLIT)$(if $(filter 1,$(PRIVATE)), --private)
 
 all: data \
 	train-random train-temporal train-temporal-nohour \
